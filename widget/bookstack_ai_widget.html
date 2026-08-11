@@ -1,0 +1,625 @@
+<!-- ========================================================= -->
+<!-- BookStack AI / RAG Custom Floating Chat Widget            -->
+<!-- Location: Settings -> Customization -> Custom HTML Content (Head) -->
+<!-- ========================================================= -->
+<style>
+  /* AI Floating FAB Button (Draggable) */
+  #ai-search-fab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99999;
+    background: linear-gradient(135deg, #0284c7 0%, #4f46e5 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: grab;
+    box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: inherit;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+
+  #ai-search-fab:active {
+    cursor: grabbing;
+  }
+
+  #ai-search-fab:hover {
+    box-shadow: 0 6px 22px rgba(79, 70, 229, 0.6);
+  }
+
+  /* AI Chat Panel (Non-blocking floating window) */
+  #ai-chat-panel {
+    display: none;
+    position: fixed;
+    bottom: 84px;
+    right: 24px;
+    width: 410px;
+    max-width: calc(100vw - 32px);
+    height: 560px;
+    max-height: calc(100vh - 110px);
+    background: var(--color-page-background, #ffffff);
+    color: var(--color-base-text, #1e293b);
+    border-radius: 16px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    z-index: 99999;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: inherit;
+    animation: chatSlideIn 0.25s ease-out;
+  }
+
+  @keyframes chatSlideIn {
+    from { transform: translateY(16px) scale(0.96); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  .ai-chat-header {
+    padding: 14px 18px;
+    background: linear-gradient(135deg, #0284c7 0%, #4f46e5 100%);
+    color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .ai-chat-header-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #ffffff;
+  }
+
+  .ai-chat-header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .ai-chat-btn-action {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: #ffffff;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+  }
+  .ai-chat-btn-action:hover {
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Chat Messages Container */
+  .ai-chat-messages {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(248, 250, 252, 0.5);
+  }
+
+  .ai-msg {
+    max-width: 88%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+
+  .ai-msg p {
+    margin: 0 0 8px 0;
+  }
+  .ai-msg p:last-child {
+    margin-bottom: 0;
+  }
+  .ai-msg ul, .ai-msg ol {
+    margin: 4px 0 8px 18px;
+    padding: 0;
+  }
+  .ai-msg h3, .ai-msg h4 {
+    margin: 8px 0 4px 0;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .ai-msg-user {
+    align-self: flex-end;
+    background: #4f46e5;
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .ai-msg-assistant {
+    align-self: flex-start;
+    background: #ffffff;
+    color: #1e293b;
+    border: 1px solid #e2e8f0;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  }
+
+  .ai-msg-sources {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #cbd5e1;
+  }
+
+  .ai-msg-sources-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+
+  .ai-chip {
+    display: inline-block;
+    background: #e0e7ff;
+    color: #3730a3;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11.5px;
+    margin-right: 6px;
+    margin-bottom: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: background 0.2s ease;
+  }
+  .ai-chip:hover {
+    background: #c7d2fe;
+    text-decoration: underline;
+  }
+
+  /* Dynamic Loading Animation (Spinning Ring + Shimmer Text + Bouncing Dots) */
+  .ai-loading-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+  }
+
+  .ai-loading-text {
+    font-size: 13px;
+    font-weight: 600;
+    background: linear-gradient(90deg, #0284c7 0%, #4f46e5 50%, #8b5cf6 100%);
+    background-size: 200% auto;
+    color: transparent;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: shimmerGradient 2s linear infinite;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  @keyframes shimmerGradient {
+    to { background-position: 200% center; }
+  }
+
+  .ai-spinner-ring {
+    display: inline-block !important;
+    width: 16px !important;
+    height: 16px !important;
+    border: 3px solid rgba(79, 70, 229, 0.2) !important;
+    border-top-color: #4f46e5 !important;
+    border-radius: 50% !important;
+    animation: spinRing 0.75s linear infinite !important;
+  }
+
+  @keyframes spinRing {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .ai-typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-left: 24px;
+  }
+
+  .ai-typing-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0284c7, #4f46e5);
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+
+  .ai-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+  .ai-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+  .ai-typing-dot:nth-child(3) { animation-delay: 0s; }
+
+  @keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0.3); opacity: 0.3; }
+    40% { transform: scale(1.1); opacity: 1; }
+  }
+
+  /* Chat Input Area */
+  .ai-chat-input-bar {
+    padding: 12px 14px;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 8px;
+  }
+
+  .ai-chat-input-bar input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    font-size: 13.5px;
+    outline: none;
+    background: #f8fafc;
+    color: #1e293b;
+  }
+  .ai-chat-input-bar input:focus {
+    border-color: #4f46e5;
+    background: #ffffff;
+  }
+
+  .ai-chat-input-bar button {
+    background: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 0 16px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  .ai-chat-input-bar button:hover {
+    background: #4338ca;
+  }
+  .ai-chat-input-bar button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+</style>
+
+<!-- Floating Button (Draggable DIV) -->
+<div id="ai-search-fab" role="button" tabindex="0">
+  ✨ Ask AI &amp; Summarize
+</div>
+
+<!-- Floating Chat Panel -->
+<div id="ai-chat-panel">
+  <div class="ai-chat-header">
+    <h4 class="ai-chat-header-title">✨ BookStack AI Assistant</h4>
+    <div class="ai-chat-header-actions">
+      <button class="ai-chat-btn-action" id="ai-chat-close-btn" type="button" title="Close">&times;</button>
+    </div>
+  </div>
+  
+  <div class="ai-chat-messages" id="ai-chat-messages">
+    <div class="ai-msg ai-msg-assistant">
+      Hello! Ask any question or request a summary about your BookStack documentation. I will search your articles and assist you.
+    </div>
+  </div>
+
+  <div class="ai-chat-input-bar">
+    <input type="text" id="ai-chat-input" placeholder="Ask a question..." />
+    <button id="ai-chat-send-btn" type="button">Send</button>
+  </div>
+</div>
+
+<script nonce="{{ $cspNonce ?? '' }}">
+  (function() {
+    const RAG_SERVICE_URL = "http://localhost:8000/api/ai-search";
+    const RAG_SECRET_TOKEN = "my_super_secret_local_token_123";
+
+    function isUserLoggedIn() {
+      if (document.querySelector('a[href*="/logout"]') || document.querySelector('#header-user-menu') || document.querySelector('.user-menu') || document.querySelector('meta[name="user-id"]')) {
+        return true;
+      }
+      if (document.querySelector('a[href*="/login"]')) {
+        return false;
+      }
+      return true;
+    }
+
+    function parseMarkdownToHTML(markdown) {
+      if (!markdown) return "";
+      let html = markdown
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
+      html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html = html.replace(/^\* (.*$)/gim, '<li>$1</li>');
+      html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>)/sim, '<ul>$1</ul>');
+      html = html.replace(/\n\n/g, '</p><p>');
+      html = html.replace(/\n/g, '<br/>');
+
+      return `<p>${html}</p>`;
+    }
+
+    function initBookStackAI() {
+      const fab = document.getElementById("ai-search-fab");
+      const panel = document.getElementById("ai-chat-panel");
+      const closeBtn = document.getElementById("ai-chat-close-btn");
+      const sendBtn = document.getElementById("ai-chat-send-btn");
+      const input = document.getElementById("ai-chat-input");
+      const msgArea = document.getElementById("ai-chat-messages");
+
+      if (!fab || !panel) return;
+
+      if (document.body) {
+        if (fab.parentElement !== document.body) document.body.appendChild(fab);
+        if (panel.parentElement !== document.body) document.body.appendChild(panel);
+      }
+
+      let isOpen = false;
+
+      function updatePanelPosition() {
+        const fabRect = fab.getBoundingClientRect();
+        const panelWidth = 410;
+        const panelHeight = 560;
+
+        let panelLeft = fabRect.right - panelWidth;
+        let panelTop = fabRect.top - panelHeight - 12;
+
+        if (panelLeft < 10) panelLeft = 10;
+        if (panelLeft + panelWidth > window.innerWidth - 10) panelLeft = window.innerWidth - panelWidth - 10;
+
+        if (panelTop < 10) {
+          panelTop = fabRect.bottom + 12;
+        }
+
+        panel.style.setProperty("left", panelLeft + "px", "important");
+        panel.style.setProperty("top", panelTop + "px", "important");
+        panel.style.setProperty("right", "auto", "important");
+        panel.style.setProperty("bottom", "auto", "important");
+      }
+
+      function togglePanel() {
+        isOpen = !isOpen;
+        if (isOpen) {
+          updatePanelPosition();
+          panel.style.display = "flex";
+          if (input) input.focus();
+        } else {
+          panel.style.display = "none";
+        }
+      }
+
+      // --- FOOLPROOF DRAGGABLE FAB IMPLEMENTATION ---
+      let isDragging = false;
+      let startMouseX = 0, startMouseY = 0;
+      let startFabLeft = 0, startFabTop = 0;
+      let hasMoved = false;
+
+      function onDragStart(e) {
+        if (e.type === "mousedown" && e.button !== 0) return;
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        isDragging = true;
+        hasMoved = false;
+        startMouseX = clientX;
+        startMouseY = clientY;
+
+        const rect = fab.getBoundingClientRect();
+        startFabLeft = rect.left;
+        startFabTop = rect.top;
+
+        if (e.cancelable) e.preventDefault();
+      }
+
+      function onDragMove(e) {
+        if (!isDragging) return;
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        const dx = clientX - startMouseX;
+        const dy = clientY - startMouseY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          hasMoved = true;
+        }
+
+        if (hasMoved) {
+          if (e.cancelable) e.preventDefault();
+
+          let newLeft = startFabLeft + dx;
+          let newTop = startFabTop + dy;
+
+          const maxLeft = window.innerWidth - fab.offsetWidth - 10;
+          const maxTop = window.innerHeight - fab.offsetHeight - 10;
+
+          newLeft = Math.max(10, Math.min(newLeft, maxLeft));
+          newTop = Math.max(10, Math.min(newTop, maxTop));
+
+          fab.style.setProperty("left", newLeft + "px", "important");
+          fab.style.setProperty("top", newTop + "px", "important");
+          fab.style.setProperty("right", "auto", "important");
+          fab.style.setProperty("bottom", "auto", "important");
+          fab.style.setProperty("transform", "none", "important");
+
+          if (isOpen) {
+            updatePanelPosition();
+          }
+        }
+      }
+
+      function onDragEnd() {
+        if (!isDragging) return;
+        isDragging = false;
+      }
+
+      fab.addEventListener("mousedown", onDragStart);
+      document.addEventListener("mousemove", onDragMove);
+      document.addEventListener("mouseup", onDragEnd);
+
+      fab.addEventListener("touchstart", onDragStart, { passive: false });
+      document.addEventListener("touchmove", onDragMove, { passive: false });
+      document.addEventListener("touchend", onDragEnd);
+
+      fab.addEventListener("click", function(e) {
+        if (hasMoved) {
+          e.preventDefault();
+          e.stopPropagation();
+          hasMoved = false;
+          return;
+        }
+        togglePanel();
+      });
+
+      fab.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          togglePanel();
+        }
+      });
+
+      if (closeBtn) {
+        closeBtn.addEventListener("click", function(e) {
+          e.preventDefault();
+          isOpen = false;
+          panel.style.display = "none";
+        });
+      }
+
+      async function sendQuestion() {
+        const query = input.value.trim();
+        if (!query) return;
+
+        const userMsg = document.createElement("div");
+        userMsg.className = "ai-msg ai-msg-user";
+        userMsg.innerText = query;
+        msgArea.appendChild(userMsg);
+
+        input.value = "";
+        sendBtn.disabled = true;
+
+        const loadingMsg = document.createElement("div");
+        loadingMsg.className = "ai-msg ai-msg-assistant";
+
+        if (!isUserLoggedIn()) {
+          const isTurkish = /[çğıöşüİĞÖŞÜ]/i.test(query) || query.toLowerCase().includes("nedir") || query.toLowerCase().includes("nasıl") || query.toLowerCase().includes("var");
+          loadingMsg.innerHTML = isTurkish
+            ? "🔒 <strong>Giriş Yapmanız Gerekiyor:</strong> Yapay Zeka Asistanını kullanabilmek ve dokümanlarda arama yapabilmek için lütfen BookStack hesabınıza giriş yapın."
+            : "🔒 <strong>Authentication Required:</strong> Please log in to your BookStack account to use the AI Assistant.";
+          msgArea.appendChild(loadingMsg);
+          sendBtn.disabled = false;
+          msgArea.scrollTop = msgArea.scrollHeight;
+          return;
+        }
+
+        // --- ANIMATED SPINNING RING + SHIMMER TEXT + BOUNCING DOTS ---
+        const isTurkish = /[çğıöşüİĞÖŞÜ]/i.test(query) || query.toLowerCase().includes("nedir") || query.toLowerCase().includes("nasıl") || query.toLowerCase().includes("var");
+        const loadingText = isTurkish ? "Dokümanlar taranıyor ve yanıt hazırlanıyor..." : "Searching documentation & thinking...";
+
+        loadingMsg.innerHTML = `
+          <div class="ai-loading-container">
+            <div class="ai-loading-text">
+              <span class="ai-spinner-ring"></span>
+              <span>${loadingText}</span>
+            </div>
+            <div class="ai-typing-indicator">
+              <div class="ai-typing-dot"></div>
+              <div class="ai-typing-dot"></div>
+              <div class="ai-typing-dot"></div>
+            </div>
+          </div>
+        `;
+        msgArea.appendChild(loadingMsg);
+        msgArea.scrollTop = msgArea.scrollHeight;
+
+        // Force browser to paint animation layout frame BEFORE network request
+        await new Promise(r => setTimeout(r, 60));
+
+        try {
+          const response = await fetch(RAG_SERVICE_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-RAG-Token": RAG_SECRET_TOKEN
+            },
+            body: JSON.stringify({ query: query, top_k: 6 })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Service Error (${response.status})`);
+          }
+
+          const data = await response.json();
+          loadingMsg.innerHTML = parseMarkdownToHTML(data.answer || "No answer returned.");
+
+          if (data.sources && data.sources.length > 0) {
+            const sourcesDiv = document.createElement("div");
+            sourcesDiv.className = "ai-msg-sources";
+            
+            const titleDiv = document.createElement("div");
+            titleDiv.className = "ai-msg-sources-title";
+            titleDiv.innerText = "📌 Cited Articles:";
+            sourcesDiv.appendChild(titleDiv);
+
+            data.sources.forEach(src => {
+              const a = document.createElement("a");
+              a.className = "ai-chip";
+              a.href = src.url;
+              a.target = "_blank";
+              a.innerText = "📄 " + (src.title || "Article");
+              sourcesDiv.appendChild(a);
+            });
+
+            loadingMsg.appendChild(sourcesDiv);
+          }
+        } catch (err) {
+          loadingMsg.innerHTML = `<span style="color: #ef4444;">⚠️ ${err.message}. Ensure RAG service is running.</span>`;
+        } finally {
+          sendBtn.disabled = false;
+          msgArea.scrollTop = msgArea.scrollHeight;
+        }
+      }
+
+      if (sendBtn) {
+        sendBtn.addEventListener("click", function(e) {
+          e.preventDefault();
+          sendQuestion();
+        });
+      }
+
+      if (input) {
+        input.addEventListener("keyup", function(e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            sendQuestion();
+          }
+        });
+      }
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initBookStackAI);
+    } else {
+      initBookStackAI();
+    }
+  })();
+</script>

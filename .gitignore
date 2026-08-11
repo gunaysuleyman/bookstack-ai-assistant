@@ -1,0 +1,34 @@
+# Environment & Secrets
+.env
+
+# Docker Volumes (if local)
+chroma_data/
+bookstack_db_data/
+bookstack_app_data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+myenv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log

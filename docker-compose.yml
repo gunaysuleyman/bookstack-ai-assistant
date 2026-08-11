@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  bookstack_db:
+    image: lscr.io/linuxserver/mariadb:latest
+    container_name: bookstack_db
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MYSQL_ROOT_PASSWORD=${DB_PASS:-secret_password}
+      - MYSQL_DATABASE=${DB_NAME:-bookstackapp}
+      - MYSQL_USER=${DB_USER:-bookstack}
+      - MYSQL_PASSWORD=${DB_PASS:-secret_password}
+    volumes:
+      - bookstack_db_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - bookstack_net
+
+  bookstack:
+    image: lscr.io/linuxserver/bookstack:latest
+    container_name: bookstack
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - APP_URL=${BOOKSTACK_EXTERNAL_URL:-http://localhost:6875}
+      - APP_KEY=${APP_KEY:-base64:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+      - APP_THEME=custom
+      - DB_HOST=bookstack_db
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-bookstack}
+      - DB_USERNAME=${DB_USER:-bookstack}
+      - DB_PASS=${DB_PASS:-secret_password}
+      - DB_PASSWORD=${DB_PASS:-secret_password}
+      - DB_DATABASE=${DB_NAME:-bookstackapp}
+      # Webhook outbound requests allowlist
+      - ALLOWED_SSR_HOSTS=rag_service,localhost,127.0.0.1
+    ports:
+      - "6875:80"
+    volumes:
+      - bookstack_app_data:/config
+      - ./widget/bookstack_ai_widget.html:/config/www/themes/custom/layouts/parts/custom-head.blade.php
+    restart: unless-stopped
+    depends_on:
+      - bookstack_db
+    networks:
+      - bookstack_net
+
+  rag_service:
+    build:
+      context: ./rag_service
+      dockerfile: Dockerfile
+    container_name: bookstack_rag_service
+    ports:
+      - "8000:8000"
+    environment:
+      - BOOKSTACK_URL=http://bookstack:80
+      - BOOKSTACK_EXTERNAL_URL=${BOOKSTACK_EXTERNAL_URL:-http://localhost:6875}
+      - BOOKSTACK_TOKEN_ID=${BOOKSTACK_TOKEN_ID}
+      - BOOKSTACK_TOKEN_SECRET=${BOOKSTACK_TOKEN_SECRET}
+      - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHROMA_PERSIST_DIR=/app/chroma_db
+    volumes:
+      - chroma_data:/app/chroma_db
+    restart: unless-stopped
+    depends_on:
+      - bookstack
+    networks:
+      - bookstack_net
+
+volumes:
+  bookstack_db_data:
+  bookstack_app_data:
+  chroma_data:
+
+networks:
+  bookstack_net:
+    driver: bridge
