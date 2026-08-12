@@ -4,13 +4,13 @@ A self-hosted AI-powered documentation assistant for [BookStack](https://www.boo
 
 ## Features
 
-- 🤖 **AI Chat Widget** — Floating chat panel injected into every BookStack page via theme override
-- 🔍 **RAG Pipeline** — ChromaDB vector search + Gemini AI for context-aware answers
-- 📚 **Full Hierarchy Awareness** — Understands Shelves → Books → Chapters → Pages → Tags
-- 🔄 **Auto-Sync** — Webhook-driven indexing when pages are created/updated/deleted
-- 🐳 **Docker Compose** — One-command deployment with zero manual configuration
-- 🎨 **Draggable FAB** — The AI button can be dragged anywhere on screen
-- 🔒 **CSP Compatible** — Works with BookStack's Content Security Policy via Blade nonce
+- **AI Chat Widget** — Floating chat panel injected into every BookStack page via theme override
+- **RAG Pipeline** — ChromaDB vector search + Gemini AI for context-aware answers
+- **Full Hierarchy Awareness** — Understands Shelves → Books → Chapters → Pages → Tags
+- **Auto-Sync** — Webhook-driven indexing when pages are created/updated/deleted
+- **Docker Compose** — One-command deployment with zero manual configuration
+- **Draggable FAB** — The AI button can be dragged anywhere on screen
+- **CSP Compatible** — Works with BookStack's Content Security Policy via Blade nonce
 
 ## Architecture
 
