@@ -1,4 +1,4 @@
-<!-- ========================================================= -->
+﻿<!-- ========================================================= -->
 <!-- BookStack AI / RAG Custom Floating Chat Widget            -->
 <!-- Location: Settings -> Customization -> Custom HTML Content (Head) -->
 <!-- ========================================================= -->
@@ -43,7 +43,7 @@
     right: 24px;
     width: 410px;
     max-width: calc(100vw - 32px);
-    height: 560px;
+    height: 570px;
     max-height: calc(100vh - 110px);
     background: var(--color-page-background, #ffffff);
     color: var(--color-base-text, #1e293b);
@@ -58,8 +58,15 @@
   }
 
   @keyframes chatSlideIn {
-    from { transform: translateY(16px) scale(0.96); opacity: 0; }
-    to { transform: translateY(0) scale(1); opacity: 1; }
+    from {
+      transform: translateY(16px) scale(0.96);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
   }
 
   .ai-chat-header {
@@ -100,8 +107,37 @@
     justify-content: center;
     transition: background 0.2s ease;
   }
+
   .ai-chat-btn-action:hover {
     background: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Page Awareness Context Bar */
+  .ai-page-context-bar {
+    background: #e0f2fe;
+    color: #0369a1;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #bae6fd;
+  }
+
+  .ai-page-context-btn {
+    background: #0284c7;
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  .ai-page-context-btn:hover {
+    background: #0369a1;
   }
 
   /* Chat Messages Container */
@@ -127,14 +163,19 @@
   .ai-msg p {
     margin: 0 0 8px 0;
   }
+
   .ai-msg p:last-child {
     margin-bottom: 0;
   }
-  .ai-msg ul, .ai-msg ol {
+
+  .ai-msg ul,
+  .ai-msg ol {
     margin: 4px 0 8px 18px;
     padding: 0;
   }
-  .ai-msg h3, .ai-msg h4 {
+
+  .ai-msg h3,
+  .ai-msg h4 {
     margin: 8px 0 4px 0;
     font-size: 14px;
     font-weight: 700;
@@ -182,6 +223,7 @@
     font-weight: 600;
     transition: background 0.2s ease;
   }
+
   .ai-chip:hover {
     background: #c7d2fe;
     text-decoration: underline;
@@ -210,7 +252,9 @@
   }
 
   @keyframes shimmerGradient {
-    to { background-position: 200% center; }
+    to {
+      background-position: 200% center;
+    }
   }
 
   .ai-spinner-ring {
@@ -224,8 +268,13 @@
   }
 
   @keyframes spinRing {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+      transform: rotate(0deg);
+    }
+
+    100% {
+      transform: rotate(360deg);
+    }
   }
 
   .ai-typing-indicator {
@@ -243,13 +292,31 @@
     animation: typingBounce 1.4s infinite ease-in-out both;
   }
 
-  .ai-typing-dot:nth-child(1) { animation-delay: -0.32s; }
-  .ai-typing-dot:nth-child(2) { animation-delay: -0.16s; }
-  .ai-typing-dot:nth-child(3) { animation-delay: 0s; }
+  .ai-typing-dot:nth-child(1) {
+    animation-delay: -0.32s;
+  }
+
+  .ai-typing-dot:nth-child(2) {
+    animation-delay: -0.16s;
+  }
+
+  .ai-typing-dot:nth-child(3) {
+    animation-delay: 0s;
+  }
 
   @keyframes typingBounce {
-    0%, 80%, 100% { transform: scale(0.3); opacity: 0.3; }
-    40% { transform: scale(1.1); opacity: 1; }
+
+    0%,
+    80%,
+    100% {
+      transform: scale(0.3);
+      opacity: 0.3;
+    }
+
+    40% {
+      transform: scale(1.1);
+      opacity: 1;
+    }
   }
 
   /* Chat Input Area */
@@ -271,6 +338,7 @@
     background: #f8fafc;
     color: #1e293b;
   }
+
   .ai-chat-input-bar input:focus {
     border-color: #4f46e5;
     background: #ffffff;
@@ -287,9 +355,11 @@
     cursor: pointer;
     transition: background 0.2s ease;
   }
+
   .ai-chat-input-bar button:hover {
     background: #4338ca;
   }
+
   .ai-chat-input-bar button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
@@ -309,7 +379,13 @@
       <button class="ai-chat-btn-action" id="ai-chat-close-btn" type="button" title="Close">&times;</button>
     </div>
   </div>
-  
+
+  <!-- Dynamic Page Awareness Context Bar -->
+  <div id="ai-page-context-container" style="display: none;" class="ai-page-context-bar">
+    <span id="ai-page-context-text">📄 Active Page: ...</span>
+    <button id="ai-page-summarize-btn" class="ai-page-context-btn" type="button">⚡ Summarize</button>
+  </div>
+
   <div class="ai-chat-messages" id="ai-chat-messages">
     <div class="ai-msg ai-msg-assistant">
       Hello! Ask any question or request a summary about your BookStack documentation. I will search your articles and assist you.
@@ -323,7 +399,7 @@
 </div>
 
 <script nonce="{{ $cspNonce ?? '' }}">
-  (function() {
+  (function () {
     const RAG_SERVICE_URL = "http://localhost:8000/api/ai-search";
     const RAG_SECRET_TOKEN = "my_super_secret_local_token_123";
 
@@ -335,6 +411,28 @@
         return false;
       }
       return true;
+    }
+
+    function getCurrentPageContext() {
+      const cleanTitle = document.title.replace(/ \| BookStack.*$/, '').trim();
+      const url = window.location.href;
+      const path = window.location.pathname;
+
+      let pageId = null;
+      const metaId = document.querySelector('meta[name="page-id"]') || document.querySelector('[data-page-id]');
+      if (metaId) {
+        pageId = metaId.getAttribute('content') || metaId.getAttribute('data-page-id');
+      }
+
+      const isPage = path.includes('/page/') || path.includes('/books/') || Boolean(pageId);
+
+      return {
+        title: cleanTitle,
+        url: url,
+        path: path,
+        page_id: pageId ? parseInt(pageId) : null,
+        is_page: isPage && path !== '/'
+      };
     }
 
     function parseMarkdownToHTML(markdown) {
@@ -365,6 +463,10 @@
       const input = document.getElementById("ai-chat-input");
       const msgArea = document.getElementById("ai-chat-messages");
 
+      const contextContainer = document.getElementById("ai-page-context-container");
+      const contextText = document.getElementById("ai-page-context-text");
+      const summarizeBtn = document.getElementById("ai-page-summarize-btn");
+
       if (!fab || !panel) return;
 
       if (document.body) {
@@ -374,10 +476,21 @@
 
       let isOpen = false;
 
+      function updatePageContextUI() {
+        const pageCtx = getCurrentPageContext();
+        if (pageCtx.is_page && contextContainer && contextText) {
+          const shortTitle = pageCtx.title.length > 28 ? pageCtx.title.substring(0, 25) + '...' : pageCtx.title;
+          contextText.innerText = "📄 " + shortTitle;
+          contextContainer.style.display = "flex";
+        } else if (contextContainer) {
+          contextContainer.style.display = "none";
+        }
+      }
+
       function updatePanelPosition() {
         const fabRect = fab.getBoundingClientRect();
         const panelWidth = 410;
-        const panelHeight = 560;
+        const panelHeight = 570;
 
         let panelLeft = fabRect.right - panelWidth;
         let panelTop = fabRect.top - panelHeight - 12;
@@ -398,6 +511,7 @@
       function togglePanel() {
         isOpen = !isOpen;
         if (isOpen) {
+          updatePageContextUI();
           updatePanelPosition();
           panel.style.display = "flex";
           if (input) input.focus();
@@ -480,7 +594,7 @@
       document.addEventListener("touchmove", onDragMove, { passive: false });
       document.addEventListener("touchend", onDragEnd);
 
-      fab.addEventListener("click", function(e) {
+      fab.addEventListener("click", function (e) {
         if (hasMoved) {
           e.preventDefault();
           e.stopPropagation();
@@ -490,7 +604,7 @@
         togglePanel();
       });
 
-      fab.addEventListener("keydown", function(e) {
+      fab.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           togglePanel();
@@ -498,42 +612,39 @@
       });
 
       if (closeBtn) {
-        closeBtn.addEventListener("click", function(e) {
+        closeBtn.addEventListener("click", function (e) {
           e.preventDefault();
           isOpen = false;
           panel.style.display = "none";
         });
       }
 
-      async function sendQuestion() {
-        const query = input.value.trim();
+      async function sendQuestion(customQuery) {
+        const query = customQuery || input.value.trim();
         if (!query) return;
+
+        const pageCtx = getCurrentPageContext();
 
         const userMsg = document.createElement("div");
         userMsg.className = "ai-msg ai-msg-user";
         userMsg.innerText = query;
         msgArea.appendChild(userMsg);
 
-        input.value = "";
+        if (!customQuery) input.value = "";
         sendBtn.disabled = true;
 
         const loadingMsg = document.createElement("div");
         loadingMsg.className = "ai-msg ai-msg-assistant";
 
         if (!isUserLoggedIn()) {
-          const isTurkish = /[çğıöşüİĞÖŞÜ]/i.test(query) || query.toLowerCase().includes("nedir") || query.toLowerCase().includes("nasıl") || query.toLowerCase().includes("var");
-          loadingMsg.innerHTML = isTurkish
-            ? "🔒 <strong>Giriş Yapmanız Gerekiyor:</strong> Yapay Zeka Asistanını kullanabilmek ve dokümanlarda arama yapabilmek için lütfen BookStack hesabınıza giriş yapın."
-            : "🔒 <strong>Authentication Required:</strong> Please log in to your BookStack account to use the AI Assistant.";
+          loadingMsg.innerHTML = "🔒 <strong>Authentication Required:</strong> Please log in to your BookStack account to use the AI Assistant.";
           msgArea.appendChild(loadingMsg);
           sendBtn.disabled = false;
           msgArea.scrollTop = msgArea.scrollHeight;
           return;
         }
 
-        // --- ANIMATED SPINNING RING + SHIMMER TEXT + BOUNCING DOTS ---
-        const isTurkish = /[çğıöşüİĞÖŞÜ]/i.test(query) || query.toLowerCase().includes("nedir") || query.toLowerCase().includes("nasıl") || query.toLowerCase().includes("var");
-        const loadingText = isTurkish ? "Dokümanlar taranıyor ve yanıt hazırlanıyor..." : "Searching documentation & thinking...";
+        const loadingText = "Searching active page & documentation...";
 
         loadingMsg.innerHTML = `
           <div class="ai-loading-container">
@@ -551,7 +662,6 @@
         msgArea.appendChild(loadingMsg);
         msgArea.scrollTop = msgArea.scrollHeight;
 
-        // Force browser to paint animation layout frame BEFORE network request
         await new Promise(r => setTimeout(r, 60));
 
         try {
@@ -561,7 +671,11 @@
               "Content-Type": "application/json",
               "X-RAG-Token": RAG_SECRET_TOKEN
             },
-            body: JSON.stringify({ query: query, top_k: 6 })
+            body: JSON.stringify({
+              query: query,
+              top_k: 6,
+              current_page: pageCtx.is_page ? pageCtx : null
+            })
           });
 
           if (!response.ok) {
@@ -574,7 +688,7 @@
           if (data.sources && data.sources.length > 0) {
             const sourcesDiv = document.createElement("div");
             sourcesDiv.className = "ai-msg-sources";
-            
+
             const titleDiv = document.createElement("div");
             titleDiv.className = "ai-msg-sources-title";
             titleDiv.innerText = "📌 Cited Articles:";
@@ -599,15 +713,23 @@
         }
       }
 
+      if (summarizeBtn) {
+        summarizeBtn.addEventListener("click", function(e) {
+          e.preventDefault();
+          const pageCtx = getCurrentPageContext();
+          sendQuestion(`Summarize the active page "${pageCtx.title}" and list its key steps`);
+        });
+      }
+
       if (sendBtn) {
-        sendBtn.addEventListener("click", function(e) {
+        sendBtn.addEventListener("click", function (e) {
           e.preventDefault();
           sendQuestion();
         });
       }
 
       if (input) {
-        input.addEventListener("keyup", function(e) {
+        input.addEventListener("keyup", function (e) {
           if (e.key === "Enter") {
             e.preventDefault();
             sendQuestion();

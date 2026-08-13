@@ -1,4 +1,4 @@
-import os
+﻿import os
 import logging
 import chromadb
 from chromadb.utils import embedding_functions
@@ -47,10 +47,10 @@ class RAGEngine:
             if all_meta and all_meta.get("metadatas"):
                 for meta in all_meta["metadatas"]:
                     pid = meta.get("page_id")
-                    sname = meta.get("shelf_name", "Genel Raf")
-                    bname = meta.get("book_name", "Genel Kütüphane")
-                    cname = meta.get("chapter_name", "Genel Bölüm")
-                    title = meta.get("name", f"Makale #{pid}")
+                    sname = meta.get("shelf_name", "General Shelf")
+                    bname = meta.get("book_name", "General Library")
+                    cname = meta.get("chapter_name", "General Chapter")
+                    title = meta.get("name", f"Article #{pid}")
                     url = meta.get("url", "")
                     tags_str = meta.get("tags_str", "")
 
@@ -72,25 +72,25 @@ class RAGEngine:
                     if cname not in tree_map[sname][bname]:
                         tree_map[sname][bname][cname] = []
 
-                    page_desc = f"{title}" + (f" [Etiketler: {tags_str}]" if tags_str else "")
+                    page_desc = f"{title}" + (f" [Tags: {tags_str}]" if tags_str else "")
                     if page_desc not in tree_map[sname][bname][cname]:
                         tree_map[sname][bname][cname].append(page_desc)
 
             if not tree_map:
-                return {"summary": "Sistemde henüz hiç doküman ve kitap indekslenmedi.", "pages": {}}
+                return {"summary": "No documents or books indexed in the system yet.", "pages": {}}
 
-            tree_lines = [f"=== BOOKSTACK TAM KÜTÜPHANE VE HİYERARŞİ KATALOĞU ===",
-                          f"Sistemdeki Tüm Raflar (Shelves), Kitaplar (Books), Bölümler (Chapters) ve Sayfalar (Pages):\n"]
+            tree_lines = [f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===",
+                          f"All Shelves, Books, Chapters, and Pages currently available in the system:\n"]
 
             for sname, books in tree_map.items():
-                tree_lines.append(f"📂 Raf (Shelf): '{sname}'")
+                tree_lines.append(f"📂 Shelf: '{sname}'")
                 for bname, chapters in books.items():
-                    tree_lines.append(f"  └─ 📚 Kitap (Book): '{bname}'")
+                    tree_lines.append(f"  └─ 📚 Book: '{bname}'")
                     for cname, pages in chapters.items():
-                        c_prefix = f"        └─ 📑 Bölüm (Chapter): '{cname}'" if cname != "Genel Bölüm" else "        └─ 📄 Sayfalar:"
+                        c_prefix = f"        └─ 📑 Chapter: '{cname}'" if cname != "General Chapter" else "        └─ 📄 Pages:"
                         tree_lines.append(c_prefix)
                         for pdesc in pages:
-                            tree_lines.append(f"              └─ 📄 Sayfa: {pdesc}")
+                            tree_lines.append(f"              └─ 📄 Page: {pdesc}")
 
             return {"summary": "\n".join(tree_lines), "pages": all_pages_map}
         except Exception as e:
@@ -141,7 +141,7 @@ class RAGEngine:
         """
         LAYER 1: Intent Router AI
         Classifies user query intent into:
-        - 'GREETING': Smalltalk, hello, thanks
+        - 'GREETING': Smalltalk, hello, hi, merhaba, thanks
         - 'OVERVIEW': Asking about catalog, books count, shelves structure
         - 'SEARCH': Specific topic or document search
         And optimizes search query for vector retrieval.
@@ -162,11 +162,10 @@ class RAGEngine:
             return data
         except Exception as e:
             logger.warning(f"Intent Router fallback due to parsing error: {e}")
-            # Fallback intent classification heuristics
             q_lower = query.strip().lower()
-            if q_lower in ["hello", "hi", "merhaba", "selam", "günaydın", "iyi günler", "thanks", "teşekkürler"]:
+            if q_lower in ["hello", "hi", "hey", "merhaba", "selam", "günaydın", "iyi günler", "thanks", "teşekkürler"]:
                 return {"intent": "GREETING", "optimized_query": query}
-            elif any(w in q_lower for w in ["kaç", "hangi", "makale", "doküman", "sayfa", "kitap", "raf", "bölüm", "etiket", "liste", "list"]):
+            elif any(w in q_lower for w in ["kaç", "hangi", "makale", "doküman", "sayfa", "kitap", "raf", "bölüm", "etiket", "liste", "list", "how many", "which", "books", "pages", "shelves"]):
                 return {"intent": "OVERVIEW", "optimized_query": query}
             else:
                 return {"intent": "SEARCH", "optimized_query": query}
@@ -175,10 +174,11 @@ class RAGEngine:
         """LAYER 2: Generates final response based on retrieved context and system instructions."""
         system_instruction = (
             "You are an expert AI Assistant integrated into BookStack Documentation System.\n"
-            "You have complete mastery over BookStack's 4-Tier Hierarchy: Raflar (Shelves) -> Kitaplar (Books) -> Bölümler (Chapters) -> Sayfalar (Pages) and Etiketler (Tags).\n"
+            "You have complete mastery over BookStack's 4-Tier Hierarchy: Shelves -> Books -> Chapters -> Pages and Tags.\n"
+            "PAGE AWARENESS RULE: Pay special attention to the active page the user is currently reading ('ACTIVE PAGE CONTEXT'). If the user asks to summarize the page, asks 'what is this', or asks about steps on the active page, prioritize the active page context.\n"
             "Answer the user's question accurately, concisely, and based strictly on the provided Context documents and Hierarchy Catalog.\n"
-            "LANGUAGE RULE: If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English. Always match the language of the user's question.\n"
-            "Use bullet points for summaries and bold formatting for key terms when appropriate."
+            "LANGUAGE DYNAMICS RULE: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
+            "Use clean markdown formatting, bullet points, and bold terms for key concepts."
         )
 
         full_prompt = f"--- CONTEXT & FULL HIERARCHY CATALOG ---\n{context}\n\n--- USER QUESTION ---\n{prompt}"
@@ -205,10 +205,10 @@ class RAGEngine:
                 "page_id": int(chunk["metadata"]["id"]),
                 "name": str(chunk["metadata"].get("name", "")),
                 "book_id": int(b_id) if b_id is not None else 0,
-                "book_name": str(chunk["metadata"].get("book_name", "Genel Kütüphane")),
-                "shelf_name": str(chunk["metadata"].get("shelf_name", "Genel Raf")),
+                "book_name": str(chunk["metadata"].get("book_name", "General Library")),
+                "shelf_name": str(chunk["metadata"].get("shelf_name", "General Shelf")),
                 "chapter_id": int(c_id) if c_id is not None else 0,
-                "chapter_name": str(chunk["metadata"].get("chapter_name", "Genel Bölüm")),
+                "chapter_name": str(chunk["metadata"].get("chapter_name", "General Chapter")),
                 "tags_str": str(chunk["metadata"].get("tags_str", "")),
                 "slug": str(chunk["metadata"].get("slug", "")),
                 "url": str(chunk["metadata"].get("url", "")),
@@ -235,11 +235,11 @@ class RAGEngine:
         except Exception as e:
             logger.warning(f"Failed to delete chunks for page ID {page_id}: {e}")
 
-    def search_and_answer(self, query: str, top_k: int = 6) -> Dict[str, Any]:
+    def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        2-LAYER AI RAG PIPELINE:
+        2-LAYER AI RAG PIPELINE WITH PAGE AWARENESS:
         Layer 1: Intent Classification & Query Optimization
-        Layer 2: ChromaDB Vector Retrieval + Gemini Answer Generation
+        Layer 2: ChromaDB Vector Retrieval (with Current Page context prioritization) + Gemini Answer Generation
         """
         # --- LAYER 1: INTENT ROUTER ---
         router_result = self.classify_and_route_intent(query)
@@ -252,7 +252,7 @@ class RAGEngine:
         catalog_summary = catalog_info.get("summary", "")
         all_pages = catalog_info.get("pages", {})
 
-        # ROUTE 1: GREETING INTENT (No vector search needed, no citations)
+        # ROUTE 1: GREETING INTENT
         if intent == "GREETING":
             answer = self.generate_llm_response(query, f"DOCUMENT CATALOG:\n{catalog_summary}\nUser greeted you. Welcome them warmly.")
             return {
@@ -260,9 +260,9 @@ class RAGEngine:
                 "sources": []
             }
 
-        # ROUTE 2: OVERVIEW INTENT (Attach catalog + all page citations)
+        # ROUTE 2: OVERVIEW INTENT
         if intent == "OVERVIEW":
-            context_str = f"=== BOOKSTACK TAM KÜTÜPHANE VE HİYERARŞİ KATALOĞU ===\n{catalog_summary}"
+            context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}"
             answer = self.generate_llm_response(query, context_str)
             sources = [{"page_id": pid, "title": info["title"], "url": info["url"]} for pid, info in all_pages.items()]
             return {
@@ -270,7 +270,24 @@ class RAGEngine:
                 "sources": sources
             }
 
-        # ROUTE 3: SEARCH INTENT (Vector Search + Target Page Citations)
+        # ROUTE 3: SEARCH INTENT (with Page Awareness)
+        current_page_context = ""
+        current_page_id = current_page.get("page_id") if current_page else None
+        current_page_title = current_page.get("title") if current_page else None
+        current_page_url = current_page.get("url") if current_page else None
+
+        if current_page_id:
+            try:
+                active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
+                if active_meta and active_meta.get("documents"):
+                    page_docs = active_meta["documents"]
+                    current_page_context = f"=== ACTIVE PAGE CONTEXT ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}\n\n" + "\n\n".join(page_docs)
+            except Exception as e:
+                logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
+
+        if not current_page_context and current_page_title:
+            current_page_context = f"=== ACTIVE PAGE CONTEXT ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}"
+
         results = self.collection.query(
             query_texts=[search_query],
             n_results=top_k
@@ -280,8 +297,10 @@ class RAGEngine:
         metadatas = results["metadatas"][0] if (results and results.get("metadatas")) else []
 
         context_parts = []
-        sources_map = {}
+        if current_page_context:
+            context_parts.append(current_page_context)
 
+        sources_map = {}
         for doc, meta in zip(documents, metadatas):
             context_parts.append(f"{doc}")
             page_id = meta.get("page_id")
@@ -292,7 +311,7 @@ class RAGEngine:
                     "url": meta.get("url")
                 }
 
-        context_str = f"=== BOOKSTACK TAM KÜTÜPHANE VE HİYERARŞİ KATALOĞU ===\n{catalog_summary}\n\n=== EN ALAKALI İÇERİK METİNLERİ ===\n" + "\n\n".join(context_parts)
+        context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}\n\n=== RELEVANT CONTEXT & ARTICLES ===\n" + "\n\n".join(context_parts)
         answer = self.generate_llm_response(query, context_str)
 
         return {
