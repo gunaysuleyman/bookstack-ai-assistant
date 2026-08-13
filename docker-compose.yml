@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   bookstack_db:
@@ -33,13 +33,12 @@ services:
       - DB_PASS=${DB_PASS:-secret_password}
       - DB_PASSWORD=${DB_PASS:-secret_password}
       - DB_DATABASE=${DB_NAME:-bookstackapp}
-      # Webhook outbound requests allowlist
       - ALLOWED_SSR_HOSTS=rag_service,localhost,127.0.0.1
     ports:
       - "6875:80"
     volumes:
       - bookstack_app_data:/config
-      - ./widget/bookstack_ai_widget.html:/config/www/themes/custom/layouts/parts/custom-head.blade.php
+      - ./widget/bookstack_ai_widget.html:/config/www/themes/custom/layouts/parts/base-body-end.blade.php
     restart: unless-stopped
     depends_on:
       - bookstack_db

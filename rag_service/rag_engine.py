@@ -16,7 +16,6 @@ class RAGEngine:
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
         self.chroma_dir = os.getenv("CHROMA_PERSIST_DIR", "/app/chroma_db")
 
-        # Default local embedding function (runs 100% locally, fast & reliable)
         self.embedding_fn = embedding_functions.DefaultEmbeddingFunction()
 
         self.chroma_client = chromadb.PersistentClient(path=self.chroma_dir)
@@ -38,7 +37,6 @@ class RAGEngine:
             )
 
     def _get_indexed_catalog(self) -> Dict[str, Any]:
-        """Retrieves a full 4-tier BookStack hierarchy tree (Shelves -> Books -> Chapters -> Pages) of all indexed items in ChromaDB."""
         try:
             all_meta = self.collection.get(include=["metadatas"])
             tree_map = {}
@@ -98,7 +96,6 @@ class RAGEngine:
             return {"summary": "", "pages": {}}
 
     def _call_llm_api(self, system_instruction: str, user_prompt: str) -> str:
-        """Internal helper to call Gemini or OpenAI API."""
         full_prompt = f"{system_instruction}\n\n{user_prompt}"
 
         if self.provider == "gemini":
@@ -152,7 +149,7 @@ class RAGEngine:
             "- 'intent': string ('GREETING' | 'OVERVIEW' | 'SEARCH')\n"
             "- 'optimized_query': string (corrected and expanded search query for vector search if SEARCH, else empty)\n\n"
             f"User Query: '{query}'\n\n"
-            "Respond ONLY with valid JSON, e.g. {\"intent\": \"SEARCH\", \"optimized_query\": \"PISA 2025 questionnaire verification steps\"}"
+            "Respond ONLY with valid JSON, e.g. {\"intent\": \"SEARCH\", \"optimized_query\": \"laptop VPN password reset IT support contact helpdesk\"}"
         )
 
         try:
@@ -174,18 +171,26 @@ class RAGEngine:
         """LAYER 2: Generates final response based on retrieved context and system instructions."""
         system_instruction = (
             "You are an expert AI Assistant integrated into BookStack Documentation System.\n"
-            "You have complete mastery over BookStack's 4-Tier Hierarchy: Shelves -> Books -> Chapters -> Pages and Tags.\n"
-            "PAGE AWARENESS RULE: Pay special attention to the active page the user is currently reading ('ACTIVE PAGE CONTEXT'). If the user asks to summarize the page, asks 'what is this', or asks about steps on the active page, prioritize the active page context.\n"
-            "Answer the user's question accurately, concisely, and based strictly on the provided Context documents and Hierarchy Catalog.\n"
-            "LANGUAGE DYNAMICS RULE: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
-            "Use clean markdown formatting, bullet points, and bold terms for key concepts."
+            "You have complete mastery over BookStack's 4-Tier Hierarchy: Shelves -> Books -> Chapters -> Pages and Tags.\n\n"
+            "CRITICAL ANSWERING RULES:\n"
+            "1. PRIMARY SOURCE: Rely on the 'SEARCH RESULTS (MOST RELEVANT ARTICLES)' to answer questions.\n"
+            "2. SPECIFIC TARGETING: If the user asks about a specific issue, answer directly from the matching article.\n"
+            "3. INTELLIGENT DOMAIN FALLBACK RULE: If a user asks about a topic or issue that does NOT have a specific step-by-step article in the documentation (e.g. 'VPN password reset', 'WiFi password', 'hardware issue'), DO NOT just say 'no information found'. Instead:\n"
+            "   - State clearly that there is currently no specific step-by-step document for that exact task.\n"
+            "   - BUT analyze the team responsibilities in the documentation (e.g. WHO TO CONTACT / WHO IS RESPONSIBLE FOR WHAT) and INTELLIGENTLY DIRECT the user to the correct contact person!\n"
+            "   - Example: For IT/password/server issues -> Direct to Süleyman (IT Support).\n"
+            "   - Example: For HR/salary/holiday issues -> Direct to Roberta/HR.\n"
+            "   - Example: For Invoice/expense issues -> Direct to Savita/Finance.\n"
+            "   - Example: For memoQ/translation tool issues -> Direct to Valentina.\n"
+            "4. PAGE AWARENESS: Use 'ACTIVE PAGE CONTEXT' ONLY when the user explicitly asks to summarize or query their currently active page (e.g., 'summarize this page', 'what is on this page'). Otherwise, answer from the Search Results.\n"
+            "5. LANGUAGE DYNAMICS: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
+            "6. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles."
         )
 
         full_prompt = f"--- CONTEXT & FULL HIERARCHY CATALOG ---\n{context}\n\n--- USER QUESTION ---\n{prompt}"
         return self._call_llm_api(system_instruction, full_prompt)
 
     def add_page_chunks(self, page_id: int, chunks: List[Dict[str, Any]]):
-        """Removes existing chunks for the page and adds new chunks with full 4-tier hierarchy metadata."""
         self.delete_page(page_id)
         if not chunks:
             return
@@ -226,7 +231,6 @@ class RAGEngine:
             logger.info(f"Successfully indexed {len(ids)} chunks for page ID {page_id}")
 
     def delete_page(self, page_id: int):
-        """Deletes all chunks associated with a specific page ID."""
         try:
             results = self.collection.get(where={"page_id": page_id})
             if results and results.get("ids"):
@@ -237,9 +241,7 @@ class RAGEngine:
 
     def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        2-LAYER AI RAG PIPELINE WITH PAGE AWARENESS:
-        Layer 1: Intent Classification & Query Optimization
-        Layer 2: ChromaDB Vector Retrieval (with Current Page context prioritization) + Gemini Answer Generation
+        2-LAYER AI RAG PIPELINE WITH PAGE AWARENESS & ACCURATE CITATIONS & DOMAIN FALLBACK
         """
         # --- LAYER 1: INTENT ROUTER ---
         router_result = self.classify_and_route_intent(query)
@@ -270,51 +272,90 @@ class RAGEngine:
                 "sources": sources
             }
 
-        # ROUTE 3: SEARCH INTENT (with Page Awareness)
-        current_page_context = ""
-        current_page_id = current_page.get("page_id") if current_page else None
-        current_page_title = current_page.get("title") if current_page else None
-        current_page_url = current_page.get("url") if current_page else None
-
-        if current_page_id:
-            try:
-                active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
-                if active_meta and active_meta.get("documents"):
-                    page_docs = active_meta["documents"]
-                    current_page_context = f"=== ACTIVE PAGE CONTEXT ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}\n\n" + "\n\n".join(page_docs)
-            except Exception as e:
-                logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
-
-        if not current_page_context and current_page_title:
-            current_page_context = f"=== ACTIVE PAGE CONTEXT ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}"
-
+        # ROUTE 3: SEARCH INTENT
         results = self.collection.query(
             query_texts=[search_query],
-            n_results=top_k
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"]
         )
 
         documents = results["documents"][0] if (results and results.get("documents")) else []
         metadatas = results["metadatas"][0] if (results and results.get("metadatas")) else []
+        distances = results["distances"][0] if (results and results.get("distances")) else []
 
-        context_parts = []
-        if current_page_context:
-            context_parts.append(current_page_context)
+        search_parts = []
+        primary_sources_map = {}
 
-        sources_map = {}
-        for doc, meta in zip(documents, metadatas):
-            context_parts.append(f"{doc}")
+        for doc, meta, dist in zip(documents, metadatas, distances):
+            search_parts.append(f"{doc}")
             page_id = meta.get("page_id")
-            if page_id and page_id not in sources_map:
-                sources_map[page_id] = {
+            if page_id and page_id not in primary_sources_map and dist <= 0.85:
+                primary_sources_map[page_id] = {
                     "page_id": page_id,
                     "title": meta.get("name"),
                     "url": meta.get("url")
                 }
 
-        context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}\n\n=== RELEVANT CONTEXT & ARTICLES ===\n" + "\n\n".join(context_parts)
+        if not primary_sources_map and metadatas:
+            for meta in metadatas[:2]:
+                pid = meta.get("page_id")
+                if pid and pid not in primary_sources_map:
+                    primary_sources_map[pid] = {
+                        "page_id": pid,
+                        "title": meta.get("name"),
+                        "url": meta.get("url")
+                    }
+
+        # Handle Active Page Context
+        q_lower = query.lower()
+        is_page_summary_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "özetle", "summarize", "buradaki"])
+        
+        current_page_context = ""
+        current_page_id = current_page.get("page_id") if current_page else None
+        current_page_title = current_page.get("title") if current_page else None
+        current_page_url = current_page.get("url") if current_page else None
+
+        if current_page_id and is_page_summary_request:
+            try:
+                active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
+                if active_meta and active_meta.get("documents"):
+                    page_docs = active_meta["documents"]
+                    current_page_context = f"=== ACTIVE PAGE CONTEXT (User explicitly asked about this active page) ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}\n\n" + "\n\n".join(page_docs)
+            except Exception as e:
+                logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
+
+        context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}\n\n"
+        context_str += f"=== SEARCH RESULTS (MOST RELEVANT ARTICLES - PRIMARY SOURCE) ===\n" + "\n\n".join(search_parts)
+        
+        if current_page_context:
+            context_str += f"\n\n{current_page_context}"
+
         answer = self.generate_llm_response(query, context_str)
+
+        # Smart Citation Refinement for Fallback Cases
+        answer_lower = answer.lower()
+        
+        # If the answer recommends contacting Süleyman / IT or mentions WHO TO CONTACT, ensure WHO TO CONTACT (page 7) is in sources and clean up unrelated PISA sources
+        has_it_fallback = "süleyman" in answer_lower or "who to contact" in answer_lower or "it support" in answer_lower
+        
+        if has_it_fallback:
+            contact_page_id = None
+            for pid, info in all_pages.items():
+                if "who to contact" in info["title"].lower() or "who is responsible" in info["title"].lower():
+                    contact_page_id = pid
+                    primary_sources_map[pid] = {
+                        "page_id": pid,
+                        "title": info["title"],
+                        "url": info["url"]
+                    }
+            
+            # Clean out unrelated PISA pages from sources if answer was an IT fallback redirect
+            if contact_page_id:
+                pisa_ids = [pid for pid, sinfo in list(primary_sources_map.items()) if "pisa" in sinfo["title"].lower()]
+                for pid in pisa_ids:
+                    del primary_sources_map[pid]
 
         return {
             "answer": answer,
-            "sources": list(sources_map.values())
+            "sources": list(primary_sources_map.values())
         }
