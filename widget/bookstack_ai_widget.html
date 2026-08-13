@@ -1,8 +1,4 @@
-﻿<!-- ========================================================= -->
-<!-- BookStack AI / RAG Custom Floating Chat Widget            -->
-<!-- Location: Settings -> Customization -> Custom HTML Content (Head) -->
-<!-- ========================================================= -->
-<style>
+﻿<style>
   /* AI Floating FAB Button (Draggable) */
   #ai-search-fab {
     position: fixed;
@@ -136,6 +132,7 @@
     cursor: pointer;
     transition: background 0.2s ease;
   }
+
   .ai-page-context-btn:hover {
     background: #0369a1;
   }
@@ -366,42 +363,45 @@
   }
 </style>
 
-<!-- Floating Button (Draggable DIV) -->
-<div id="ai-search-fab" role="button" tabindex="0">
-  ✨ Ask AI &amp; Summarize
-</div>
-
-<!-- Floating Chat Panel -->
-<div id="ai-chat-panel">
-  <div class="ai-chat-header">
-    <h4 class="ai-chat-header-title">✨ BookStack AI Assistant</h4>
-    <div class="ai-chat-header-actions">
-      <button class="ai-chat-btn-action" id="ai-chat-close-btn" type="button" title="Close">&times;</button>
-    </div>
-  </div>
-
-  <!-- Dynamic Page Awareness Context Bar -->
-  <div id="ai-page-context-container" style="display: none;" class="ai-page-context-bar">
-    <span id="ai-page-context-text">📄 Active Page: ...</span>
-    <button id="ai-page-summarize-btn" class="ai-page-context-btn" type="button">⚡ Summarize</button>
-  </div>
-
-  <div class="ai-chat-messages" id="ai-chat-messages">
-    <div class="ai-msg ai-msg-assistant">
-      Hello! Ask any question or request a summary about your BookStack documentation. I will search your articles and assist you.
-    </div>
-  </div>
-
-  <div class="ai-chat-input-bar">
-    <input type="text" id="ai-chat-input" placeholder="Ask a question..." />
-    <button id="ai-chat-send-btn" type="button">Send</button>
-  </div>
-</div>
-
 <script nonce="{{ $cspNonce ?? '' }}">
   (function () {
     const RAG_SERVICE_URL = "http://localhost:8000/api/ai-search";
     const RAG_SECRET_TOKEN = "my_super_secret_local_token_123";
+
+    function injectWidgetDOM() {
+      if (document.getElementById("ai-search-fab")) return;
+
+      const widgetHTML = `
+        <div id="ai-search-fab" role="button" tabindex="0">
+          ✨ Ask AI &amp; Summarize
+        </div>
+        <div id="ai-chat-panel">
+          <div class="ai-chat-header">
+            <h4 class="ai-chat-header-title">✨ BookStack AI Assistant</h4>
+            <div class="ai-chat-header-actions">
+              <button class="ai-chat-btn-action" id="ai-chat-close-btn" type="button" title="Close">&times;</button>
+            </div>
+          </div>
+          <div id="ai-page-context-container" style="display: none;" class="ai-page-context-bar">
+            <span id="ai-page-context-text">📄 Active Page: ...</span>
+            <button id="ai-page-summarize-btn" class="ai-page-context-btn" type="button">⚡ Summarize</button>
+          </div>
+          <div class="ai-chat-messages" id="ai-chat-messages">
+            <div class="ai-msg ai-msg-assistant">
+              Hello! Ask any question or request a summary about your BookStack documentation. I will search your articles and assist you.
+            </div>
+          </div>
+          <div class="ai-chat-input-bar">
+            <input type="text" id="ai-chat-input" placeholder="Ask a question..." />
+            <button id="ai-chat-send-btn" type="button">Send</button>
+          </div>
+        </div>
+      `;
+
+      if (document.body) {
+        document.body.insertAdjacentHTML("beforeend", widgetHTML);
+      }
+    }
 
     function isUserLoggedIn() {
       if (document.querySelector('a[href*="/logout"]') || document.querySelector('#header-user-menu') || document.querySelector('.user-menu') || document.querySelector('meta[name="user-id"]')) {
@@ -456,6 +456,8 @@
     }
 
     function initBookStackAI() {
+      injectWidgetDOM();
+
       const fab = document.getElementById("ai-search-fab");
       const panel = document.getElementById("ai-chat-panel");
       const closeBtn = document.getElementById("ai-chat-close-btn");
@@ -468,11 +470,6 @@
       const summarizeBtn = document.getElementById("ai-page-summarize-btn");
 
       if (!fab || !panel) return;
-
-      if (document.body) {
-        if (fab.parentElement !== document.body) document.body.appendChild(fab);
-        if (panel.parentElement !== document.body) document.body.appendChild(panel);
-      }
 
       let isOpen = false;
 
@@ -714,7 +711,7 @@
       }
 
       if (summarizeBtn) {
-        summarizeBtn.addEventListener("click", function(e) {
+        summarizeBtn.addEventListener("click", function (e) {
           e.preventDefault();
           const pageCtx = getCurrentPageContext();
           sendQuestion(`Summarize the active page "${pageCtx.title}" and list its key steps`);
