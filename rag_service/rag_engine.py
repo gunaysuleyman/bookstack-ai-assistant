@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 import chromadb
 from chromadb.utils import embedding_functions
@@ -36,7 +36,7 @@ class RAGEngine:
                 embedding_function=self.embedding_fn
             )
 
-    def _get_indexed_catalog(self) -> Dict[str, Any]:
+    def _get_indexed_catalog(self, allowed_page_ids: Optional[List[int]] = None) -> Dict[str, Any]:
         try:
             all_meta = self.collection.get(include=["metadatas"])
             tree_map = {}
@@ -45,6 +45,8 @@ class RAGEngine:
             if all_meta and all_meta.get("metadatas"):
                 for meta in all_meta["metadatas"]:
                     pid = meta.get("page_id")
+                    if allowed_page_ids is not None and pid not in allowed_page_ids:
+                        continue
                     sname = meta.get("shelf_name", "General Shelf")
                     bname = meta.get("book_name", "General Library")
                     cname = meta.get("chapter_name", "General Chapter")
@@ -173,18 +175,15 @@ class RAGEngine:
             "You are an expert AI Assistant integrated into BookStack Documentation System.\n"
             "You have complete mastery over BookStack's 4-Tier Hierarchy: Shelves -> Books -> Chapters -> Pages and Tags.\n\n"
             "CRITICAL ANSWERING RULES:\n"
-            "1. PRIMARY SOURCE: Rely on the 'SEARCH RESULTS (MOST RELEVANT ARTICLES)' to answer questions.\n"
+            "1. PRIMARY SOURCE: Rely strictly on the provided 'SEARCH RESULTS (MOST RELEVANT ARTICLES)' and 'DOCUMENT CATALOG' to answer questions.\n"
             "2. SPECIFIC TARGETING: If the user asks about a specific issue, answer directly from the matching article.\n"
-            "3. INTELLIGENT DOMAIN FALLBACK RULE: If a user asks about a topic or issue that does NOT have a specific step-by-step article in the documentation (e.g. 'VPN password reset', 'WiFi password', 'hardware issue'), DO NOT just say 'no information found'. Instead:\n"
-            "   - State clearly that there is currently no specific step-by-step document for that exact task.\n"
-            "   - BUT analyze the team responsibilities in the documentation (e.g. WHO TO CONTACT / WHO IS RESPONSIBLE FOR WHAT) and INTELLIGENTLY DIRECT the user to the correct contact person!\n"
-            "   - Example: For IT/password/server issues -> Direct to Süleyman (IT Support).\n"
-            "   - Example: For HR/salary/holiday issues -> Direct to Roberta/HR.\n"
-            "   - Example: For Invoice/expense issues -> Direct to Savita/Finance.\n"
-            "   - Example: For memoQ/translation tool issues -> Direct to Valentina.\n"
-            "4. PAGE AWARENESS: Use 'ACTIVE PAGE CONTEXT' ONLY when the user explicitly asks to summarize or query their currently active page (e.g., 'summarize this page', 'what is on this page'). Otherwise, answer from the Search Results.\n"
-            "5. LANGUAGE DYNAMICS: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
-            "6. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles."
+            "3. STRICT PERMISSION BOUNDARY: The user is only authorized to see the articles provided in the context. You must ONLY answer based on these provided articles. Never mention, reference, assume, or invent articles, departments, or personnel that are not explicitly present in the provided context.\n"
+            "4. INTELLIGENT DOMAIN FALLBACK RULE: If a user asks about a topic or issue that does NOT have a specific step-by-step article in the provided documentation:\n"
+            "   - If the provided documentation contains a responsibility/contact guide (e.g. WHO TO CONTACT), use that guide to direct the user to the appropriate contact person.\n"
+            "   - If no relevant document or contact guide is present in the provided context, state clearly and politely that there is no accessible documentation for this topic in the system.\n"
+            "5. PAGE AWARENESS: Use 'ACTIVE PAGE CONTEXT' ONLY when the user explicitly asks to summarize or query their currently active page (e.g., 'summarize this page', 'what is on this page'). Otherwise, answer from the Search Results.\n"
+            "6. LANGUAGE DYNAMICS: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
+            "7. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles."
         )
 
         full_prompt = f"--- CONTEXT & FULL HIERARCHY CATALOG ---\n{context}\n\n--- USER QUESTION ---\n{prompt}"
@@ -239,18 +238,18 @@ class RAGEngine:
         except Exception as e:
             logger.warning(f"Failed to delete chunks for page ID {page_id}: {e}")
 
-    def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None, allowed_page_ids: Optional[List[int]] = None) -> Dict[str, Any]:
         """
-        2-LAYER AI RAG PIPELINE WITH PAGE AWARENESS & ACCURATE CITATIONS & DOMAIN FALLBACK
+        2-LAYER AI RAG PIPELINE WITH PERMISSION FILTERING, PAGE AWARENESS & ACCURATE CITATIONS
         """
         # --- LAYER 1: INTENT ROUTER ---
         router_result = self.classify_and_route_intent(query)
         intent = router_result.get("intent", "SEARCH")
         search_query = router_result.get("optimized_query", query) or query
 
-        logger.info(f"Intent Router Result -> Intent: {intent}, Search Query: '{search_query}'")
+        logger.info(f"Intent Router Result -> Intent: {intent}, Search Query: '{search_query}', Allowed Pages: {len(allowed_page_ids) if allowed_page_ids is not None else 'All'}")
 
-        catalog_info = self._get_indexed_catalog()
+        catalog_info = self._get_indexed_catalog(allowed_page_ids=allowed_page_ids)
         catalog_summary = catalog_info.get("summary", "")
         all_pages = catalog_info.get("pages", {})
 
@@ -275,7 +274,7 @@ class RAGEngine:
         # ROUTE 3: SEARCH INTENT
         results = self.collection.query(
             query_texts=[search_query],
-            n_results=top_k,
+            n_results=top_k * 2 if allowed_page_ids is not None else top_k,
             include=["documents", "metadatas", "distances"]
         )
 
@@ -287,8 +286,12 @@ class RAGEngine:
         primary_sources_map = {}
 
         for doc, meta, dist in zip(documents, metadatas, distances):
-            search_parts.append(f"{doc}")
             page_id = meta.get("page_id")
+            # Permission check: skip if page is not permitted
+            if allowed_page_ids is not None and (page_id is None or page_id not in allowed_page_ids):
+                continue
+
+            search_parts.append(f"{doc}")
             if page_id and page_id not in primary_sources_map and dist <= 0.85:
                 primary_sources_map[page_id] = {
                     "page_id": page_id,
@@ -297,16 +300,20 @@ class RAGEngine:
                 }
 
         if not primary_sources_map and metadatas:
-            for meta in metadatas[:2]:
+            for meta in metadatas:
                 pid = meta.get("page_id")
+                if allowed_page_ids is not None and (pid is None or pid not in allowed_page_ids):
+                    continue
                 if pid and pid not in primary_sources_map:
                     primary_sources_map[pid] = {
                         "page_id": pid,
                         "title": meta.get("name"),
                         "url": meta.get("url")
                     }
+                if len(primary_sources_map) >= 2:
+                    break
 
-        # Handle Active Page Context
+        # Handle Active Page Context (only if permitted)
         q_lower = query.lower()
         is_page_summary_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "özetle", "summarize", "buradaki"])
         
@@ -316,16 +323,20 @@ class RAGEngine:
         current_page_url = current_page.get("url") if current_page else None
 
         if current_page_id and is_page_summary_request:
-            try:
-                active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
-                if active_meta and active_meta.get("documents"):
-                    page_docs = active_meta["documents"]
-                    current_page_context = f"=== ACTIVE PAGE CONTEXT (User explicitly asked about this active page) ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}\n\n" + "\n\n".join(page_docs)
-            except Exception as e:
-                logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
+            page_permitted = (allowed_page_ids is None) or (int(current_page_id) in allowed_page_ids)
+            if page_permitted:
+                try:
+                    active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
+                    if active_meta and active_meta.get("documents"):
+                        page_docs = active_meta["documents"]
+                        current_page_context = f"=== ACTIVE PAGE CONTEXT (User explicitly asked about this active page) ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}\n\n" + "\n\n".join(page_docs)
+                except Exception as e:
+                    logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
+            else:
+                logger.warning(f"Active page ID {current_page_id} is not in user's permitted pages. Skipping context injection.")
 
         context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}\n\n"
-        context_str += f"=== SEARCH RESULTS (MOST RELEVANT ARTICLES - PRIMARY SOURCE) ===\n" + "\n\n".join(search_parts)
+        context_str += f"=== SEARCH RESULTS (MOST RELEVANT ARTICLES - PRIMARY SOURCE) ===\n" + ("\n\n".join(search_parts) if search_parts else "No matching permitted documents found.")
         
         if current_page_context:
             context_str += f"\n\n{current_page_context}"
@@ -335,7 +346,7 @@ class RAGEngine:
         # Smart Citation Refinement for Fallback Cases
         answer_lower = answer.lower()
         
-        # If the answer recommends contacting Süleyman / IT or mentions WHO TO CONTACT, ensure WHO TO CONTACT (page 7) is in sources and clean up unrelated PISA sources
+        # Only check contact page if permitted (all_pages is already filtered by allowed_page_ids)
         has_it_fallback = "süleyman" in answer_lower or "who to contact" in answer_lower or "it support" in answer_lower
         
         if has_it_fallback:

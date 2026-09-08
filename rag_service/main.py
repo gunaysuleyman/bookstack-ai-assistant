@@ -1,4 +1,7 @@
-﻿import os
+import os
+import hmac
+import hashlib
+import json
 import logging
 from fastapi import FastAPI, Header, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +17,7 @@ logger = logging.getLogger("RAGService")
 app = FastAPI(
     title="BookStack AI / RAG Service",
     version="1.0.0",
-    description="RAG and AI Search Layer for BookStack with Page Awareness"
+    description="RAG and AI Search Layer for BookStack with Page Awareness and Permission Trimming"
 )
 
 origins = ["*"]
@@ -40,6 +43,62 @@ class SearchQuery(BaseModel):
     query: str
     top_k: Optional[int] = 6
     current_page: Optional[Dict[str, Any]] = None
+    user_token: Optional[Dict[str, Any]] = None
+
+def extract_allowed_page_ids(user_token: Optional[Dict[str, Any]]) -> Optional[List[int]]:
+    """
+    Validates HMAC signature on user_token and extracts allowed_page_ids.
+    Returns:
+      None -> Admin user (access to all pages)
+      List[int] -> Explicit list of permitted page IDs
+      [] -> No pages permitted
+    """
+    if not user_token:
+        # Fallback if user_token is not provided (e.g. direct API or curl mode)
+        logger.info("No user_token in request. Defaulting to full access (admin/direct API mode).")
+        return None
+
+    raw_payload = user_token.get("payload")
+    signature = user_token.get("sig")
+
+    if not raw_payload or not signature:
+        logger.warning("user_token provided without payload or signature. Rejecting access.")
+        return []
+
+    # Verify HMAC
+    expected_sig = hmac.new(
+        RAG_SECRET_TOKEN.encode("utf-8"),
+        raw_payload.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(signature, expected_sig):
+        logger.error("Tampered user_token signature detected!")
+        raise HTTPException(status_code=403, detail="Invalid user security token signature")
+
+    try:
+        data = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+    except Exception as e:
+        logger.error(f"Failed to parse user_token payload: {e}")
+        return []
+
+    if data.get("can_use_ai") is False:
+        logger.warning(f"AI Assistant access denied for user {data.get('user_id')} with roles {data.get('roles')}")
+        raise HTTPException(status_code=403, detail="AI Assistant is not enabled for your user role.")
+
+    if data.get("is_admin") is True:
+        return None
+
+    allowed_ids = data.get("allowed_page_ids", [])
+    if isinstance(allowed_ids, list):
+        parsed = []
+        for x in allowed_ids:
+            try:
+                parsed.append(int(x))
+            except (ValueError, TypeError):
+                pass
+        return parsed
+    return []
 
 @app.get("/health")
 def health_check():
@@ -55,11 +114,19 @@ def ai_search(payload: SearchQuery, x_rag_token: Optional[str] = Header(None)):
     if not payload.query or not payload.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
-    logger.info(f"AI Search Query received: '{payload.query}' (Current Page: {payload.current_page.get('title') if payload.current_page else 'None'})")
+    allowed_page_ids = extract_allowed_page_ids(payload.user_token)
+
+    logger.info(
+        f"AI Search Query received: '{payload.query}' "
+        f"(Current Page: {payload.current_page.get('title') if payload.current_page else 'None'}, "
+        f"Permitted Pages: {len(allowed_page_ids) if allowed_page_ids is not None else 'All'})"
+    )
+
     result = rag_engine.search_and_answer(
         query=payload.query,
         top_k=payload.top_k,
-        current_page=payload.current_page
+        current_page=payload.current_page,
+        allowed_page_ids=allowed_page_ids
     )
     return result
 

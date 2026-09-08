@@ -1,5 +1,3 @@
-﻿version: '3.8'
-
 services:
   bookstack_db:
     image: lscr.io/linuxserver/mariadb:latest
@@ -12,7 +10,7 @@ services:
       - MYSQL_USER=${DB_USER:-bookstack}
       - MYSQL_PASSWORD=${DB_PASS:-secret_password}
     volumes:
-      - bookstack_db_data:/var/lib/mysql
+      - bookstack_db_data:/config
     restart: unless-stopped
     networks:
       - bookstack_net
@@ -34,6 +32,8 @@ services:
       - DB_PASSWORD=${DB_PASS:-secret_password}
       - DB_DATABASE=${DB_NAME:-bookstackapp}
       - ALLOWED_SSR_HOSTS=rag_service,localhost,127.0.0.1
+      - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     ports:
       - "6875:80"
     volumes:
@@ -62,6 +62,7 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CHROMA_PERSIST_DIR=/app/chroma_db
+      - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     volumes:
       - chroma_data:/app/chroma_db
     restart: unless-stopped

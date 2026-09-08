@@ -1,4 +1,48 @@
-﻿<style>
+@php
+  $bookstackUser = function_exists('user') ? user() : null;
+  $isAdmin = false;
+  $allowedPageIds = [];
+
+  if ($bookstackUser && method_exists($bookstackUser, 'hasSystemRole') && $bookstackUser->hasSystemRole('admin')) {
+      $isAdmin = true;
+      $allowedPageIds = null;
+  } else {
+      try {
+          if (class_exists(\BookStack\Entities\Models\Page::class)) {
+              $allowedPageIds = \BookStack\Entities\Models\Page::visible()->pluck('id')->toArray();
+          }
+      } catch (\Throwable $e) {
+          $allowedPageIds = [];
+      }
+  }
+
+  // Feature Gating: Check if current user has an allowed role for AI Assistant
+  $userRoles = ($bookstackUser && isset($bookstackUser->roles)) 
+      ? $bookstackUser->roles->map(function($r) { return strtolower(trim($r->display_name ?: $r->name ?: '')); })->toArray() 
+      : [];
+  $allowedRolesRaw = env('AI_ALLOWED_ROLES', 'admin,internal');
+  $allowedRolesList = array_map('trim', explode(',', strtolower($allowedRolesRaw)));
+
+  $canUseAI = $isAdmin 
+      || in_array('all', $allowedRolesList) 
+      || in_array('*', $allowedRolesList) 
+      || !empty(array_intersect($userRoles, $allowedRolesList));
+
+  $tokenPayloadData = [
+      'user_id' => $bookstackUser ? $bookstackUser->id : null,
+      'is_admin' => $isAdmin,
+      'can_use_ai' => $canUseAI,
+      'roles' => $userRoles,
+      'allowed_page_ids' => $allowedPageIds,
+      'ts' => time()
+  ];
+  $tokenPayloadJson = json_encode($tokenPayloadData);
+  $ragSecret = env('RAG_SECRET_TOKEN', 'my_super_secret_local_token_123');
+  $tokenSignature = hash_hmac('sha256', $tokenPayloadJson, $ragSecret);
+@endphp
+
+@if($canUseAI)
+<style>
   /* AI Floating FAB Button (Draggable) */
   #ai-search-fab {
     position: fixed;
@@ -367,6 +411,10 @@
   (function () {
     const RAG_SERVICE_URL = "http://localhost:8000/api/ai-search";
     const RAG_SECRET_TOKEN = "my_super_secret_local_token_123";
+    const USER_SECURITY_TOKEN = {
+      payload: {!! json_encode($tokenPayloadJson) !!},
+      sig: "{{ $tokenSignature }}"
+    };
 
     function injectWidgetDOM() {
       if (document.getElementById("ai-search-fab")) return;
@@ -671,7 +719,8 @@
             body: JSON.stringify({
               query: query,
               top_k: 6,
-              current_page: pageCtx.is_page ? pageCtx : null
+              current_page: pageCtx.is_page ? pageCtx : null,
+              user_token: USER_SECURITY_TOKEN
             })
           });
 
@@ -742,3 +791,4 @@
     }
   })();
 </script>
+@endif
