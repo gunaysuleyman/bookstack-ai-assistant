@@ -136,22 +136,32 @@ class RAGEngine:
         else:
             raise ValueError(f"Unsupported AI_PROVIDER: {self.provider}")
 
-    def classify_and_route_intent(self, query: str) -> Dict[str, Any]:
+    def classify_and_route_intent(self, query: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
         LAYER 1: Intent Router AI
         Classifies user query intent into:
         - 'GREETING': Smalltalk, hello, hi, merhaba, thanks
         - 'OVERVIEW': Asking about catalog, books count, shelves structure
         - 'SEARCH': Specific topic or document search
-        And optimizes search query for vector retrieval.
+        And optimizes search query for vector retrieval using history if available.
         """
+        history_snippet = ""
+        if history:
+            recent = history[-4:]
+            history_lines = [f"- {m.get('role')}: {m.get('content')[:180]}" for m in recent]
+            history_snippet = "Recent Conversation Context (Use this to resolve references like 'it', 'this', 'o', 'bu'):\n" + "\n".join(history_lines) + "\n\n"
+
         router_prompt = (
             "You are an AI Intent Router for a BookStack Documentation Assistant.\n"
             "Classify the user query into JSON format with keys:\n"
             "- 'intent': string ('GREETING' | 'OVERVIEW' | 'SEARCH')\n"
-            "- 'optimized_query': string (corrected and expanded search query for vector search if SEARCH, else empty)\n\n"
-            f"User Query: '{query}'\n\n"
-            "Respond ONLY with valid JSON, e.g. {\"intent\": \"SEARCH\", \"optimized_query\": \"laptop VPN password reset IT support contact helpdesk\"}"
+            "  * 'GREETING': Pure greetings only (hello, hi, hey, merhaba, selam, thanks).\n"
+            "  * 'OVERVIEW': ONLY when the user asks for a global list of all shelves/books or library statistics (e.g. 'hangi kitaplıklar var', 'bütün sayfaları listele', 'sistemde neler var'). Questions about 'this page' / 'bu sayfa' or specific topics are NEVER OVERVIEW.\n"
+            "  * 'SEARCH': For ANY question about a topic, procedure, or asking about a specific page or the current page (e.g. 'bu sayfa ile alakalı ne biliyorsun', 'bu nedir', 'özetle', 'nasıl yapılır' are ALWAYS SEARCH).\n"
+            "- 'optimized_query': string (search query for vector retrieval if SEARCH, else empty).\n"
+            "CRITICAL NOTE FOR 'optimized_query': The documentation is in English. If the user asks in Turkish or other languages, ALWAYS include key English translation terms and synonyms alongside original terms (e.g., if user asks 'bilgisayarım bozuldu' or 'donanım arızası', include 'laptop computer not working broken hardware equipment IT support contact').\n\n"
+            f"{history_snippet}User Query: '{query}'\n\n"
+            "Respond ONLY with valid JSON, e.g. {\"intent\": \"SEARCH\", \"optimized_query\": \"bilgisayar bozuldu laptop computer not working broken hardware IT support who to contact\"}"
         )
 
         try:
@@ -162,15 +172,17 @@ class RAGEngine:
         except Exception as e:
             logger.warning(f"Intent Router fallback due to parsing error: {e}")
             q_lower = query.strip().lower()
-            if q_lower in ["hello", "hi", "hey", "merhaba", "selam", "günaydın", "iyi günler", "thanks", "teşekkürler"]:
+            if any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "burada", "buradaki", "özet", "özetle", "ne biliyorsun"]):
+                return {"intent": "SEARCH", "optimized_query": query}
+            elif q_lower in ["hello", "hi", "hey", "merhaba", "selam", "günaydın", "iyi günler", "thanks", "teşekkürler"]:
                 return {"intent": "GREETING", "optimized_query": query}
             elif any(w in q_lower for w in ["kaç", "hangi", "makale", "doküman", "sayfa", "kitap", "raf", "bölüm", "etiket", "liste", "list", "how many", "which", "books", "pages", "shelves"]):
                 return {"intent": "OVERVIEW", "optimized_query": query}
             else:
                 return {"intent": "SEARCH", "optimized_query": query}
 
-    def generate_llm_response(self, prompt: str, context: str) -> str:
-        """LAYER 2: Generates final response based on retrieved context and system instructions."""
+    def generate_llm_response(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        """LAYER 2: Generates final response based on retrieved context, history and system instructions."""
         system_instruction = (
             "You are an expert AI Assistant integrated into BookStack Documentation System.\n"
             "You have complete mastery over BookStack's 4-Tier Hierarchy: Shelves -> Books -> Chapters -> Pages and Tags.\n\n"
@@ -181,12 +193,23 @@ class RAGEngine:
             "4. INTELLIGENT DOMAIN FALLBACK RULE: If a user asks about a topic or issue that does NOT have a specific step-by-step article in the provided documentation:\n"
             "   - If the provided documentation contains a responsibility/contact guide (e.g. WHO TO CONTACT), use that guide to direct the user to the appropriate contact person.\n"
             "   - If no relevant document or contact guide is present in the provided context, state clearly and politely that there is no accessible documentation for this topic in the system.\n"
-            "5. PAGE AWARENESS: Use 'ACTIVE PAGE CONTEXT' ONLY when the user explicitly asks to summarize or query their currently active page (e.g., 'summarize this page', 'what is on this page'). Otherwise, answer from the Search Results.\n"
-            "6. LANGUAGE DYNAMICS: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
-            "7. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles."
+            "5. ACTIVE PAGE AWARENESS & HYBRID CONTEXT ROUTING:\n"
+            "   - When 'CURRENT ACTIVE PAGE' is provided, the user is currently reading that specific article in BookStack.\n"
+            "   - If the user's question relates to the topics, steps, instructions, requirements, or content on this active page, or uses contextual references (such as 'buradaki', 'bu adımlar', 'bu sayfa', 'bu işlem', 'here', 'these steps', 'bu doküman'), prioritize answering directly and thoroughly from the CURRENT ACTIVE PAGE context.\n"
+            "   - If the user's question asks about a DIFFERENT topic, department, contact person, policy, or procedure that is NOT covered on the active page (for example, asking about IT support, hardware issues, or other project documents while on an unrelated page), rely on the SEARCH RESULTS (MOST RELEVANT ARTICLES) from other pages across the library. Answer clearly using that documentation.\n"
+            "   - If the question connects both the active page and external articles, synthesize information from both smoothly and cite all relevant articles.\n"
+            "6. CONVERSATION CONTINUITY: When 'RECENT CONVERSATION HISTORY' is provided, maintain context and continuity with earlier answers while staying strictly grounded in the documentation.\n"
+            "7. LANGUAGE DYNAMICS: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
+            "8. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles."
         )
 
-        full_prompt = f"--- CONTEXT & FULL HIERARCHY CATALOG ---\n{context}\n\n--- USER QUESTION ---\n{prompt}"
+        history_text = ""
+        if history:
+            recent_turns = history[-6:]
+            history_lines = [f"- {m.get('role', 'user').capitalize()}: {m.get('content', '')}" for m in recent_turns]
+            history_text = "=== RECENT CONVERSATION HISTORY (Previous turns in this chat session) ===\n" + "\n".join(history_lines) + "\n\n"
+
+        full_prompt = f"{history_text}--- CONTEXT & FULL HIERARCHY CATALOG ---\n{context}\n\n--- USER QUESTION ---\n{prompt}"
         return self._call_llm_api(system_instruction, full_prompt)
 
     def add_page_chunks(self, page_id: int, chunks: List[Dict[str, Any]]):
@@ -238,14 +261,26 @@ class RAGEngine:
         except Exception as e:
             logger.warning(f"Failed to delete chunks for page ID {page_id}: {e}")
 
-    def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None, allowed_page_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+    def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None, allowed_page_ids: Optional[List[int]] = None, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
         2-LAYER AI RAG PIPELINE WITH PERMISSION FILTERING, PAGE AWARENESS & ACCURATE CITATIONS
         """
         # --- LAYER 1: INTENT ROUTER ---
-        router_result = self.classify_and_route_intent(query)
+        router_result = self.classify_and_route_intent(query, history=history)
         intent = router_result.get("intent", "SEARCH")
         search_query = router_result.get("optimized_query", query) or query
+
+        # Force SEARCH intent if query is page-specific
+        q_lower = query.strip().lower()
+        is_page_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "burada", "buradaki", "özet", "özetle", "summarize", "ne biliyorsun", "hakkında ne"])
+        if is_page_request and intent == "OVERVIEW":
+            logger.info("Routing override: query refers to active page, forcing SEARCH intent instead of OVERVIEW.")
+            intent = "SEARCH"
+
+        current_page_title = current_page.get("title") if current_page else None
+        if is_page_request and current_page_title:
+            if not any(w in search_query.lower() for w in current_page_title.lower().split() if len(w) > 3):
+                search_query = f"{current_page_title} {search_query}"
 
         logger.info(f"Intent Router Result -> Intent: {intent}, Search Query: '{search_query}', Allowed Pages: {len(allowed_page_ids) if allowed_page_ids is not None else 'All'}")
 
@@ -255,7 +290,7 @@ class RAGEngine:
 
         # ROUTE 1: GREETING INTENT
         if intent == "GREETING":
-            answer = self.generate_llm_response(query, f"DOCUMENT CATALOG:\n{catalog_summary}\nUser greeted you. Welcome them warmly.")
+            answer = self.generate_llm_response(query, f"DOCUMENT CATALOG:\n{catalog_summary}\nUser greeted you. Welcome them warmly.", history=history)
             return {
                 "answer": answer,
                 "sources": []
@@ -264,7 +299,7 @@ class RAGEngine:
         # ROUTE 2: OVERVIEW INTENT
         if intent == "OVERVIEW":
             context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}"
-            answer = self.generate_llm_response(query, context_str)
+            answer = self.generate_llm_response(query, context_str, history=history)
             sources = [{"page_id": pid, "title": info["title"], "url": info["url"]} for pid, info in all_pages.items()]
             return {
                 "answer": answer,
@@ -313,41 +348,73 @@ class RAGEngine:
                 if len(primary_sources_map) >= 2:
                     break
 
-        # Handle Active Page Context (only if permitted)
+        # Handle Active Page Context (always inject if user is currently reading an authorized page)
         q_lower = query.lower()
-        is_page_summary_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "özetle", "summarize", "buradaki"])
+        is_page_summary_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "özetle", "summarize", "buradaki", "bu doküman", "burada"])
         
         current_page_context = ""
         current_page_id = current_page.get("page_id") if current_page else None
         current_page_title = current_page.get("title") if current_page else None
         current_page_url = current_page.get("url") if current_page else None
+        active_page_loaded = False
 
-        if current_page_id and is_page_summary_request:
+        if current_page_id:
             page_permitted = (allowed_page_ids is None) or (int(current_page_id) in allowed_page_ids)
             if page_permitted:
                 try:
                     active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
                     if active_meta and active_meta.get("documents"):
                         page_docs = active_meta["documents"]
-                        current_page_context = f"=== ACTIVE PAGE CONTEXT (User explicitly asked about this active page) ===\nPage Title: '{current_page_title}'\nURL: {current_page_url}\n\n" + "\n\n".join(page_docs)
+                        current_page_context = (
+                            f"=== CURRENT ACTIVE PAGE (User is currently reading this article in BookStack) ===\n"
+                            f"Page Title: '{current_page_title}'\n"
+                            f"Page ID: {current_page_id}\n"
+                            f"URL: {current_page_url}\n\n"
+                            + "\n\n".join(page_docs)
+                        )
+                        active_page_loaded = True
                 except Exception as e:
                     logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
             else:
                 logger.warning(f"Active page ID {current_page_id} is not in user's permitted pages. Skipping context injection.")
 
-        context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}\n\n"
-        context_str += f"=== SEARCH RESULTS (MOST RELEVANT ARTICLES - PRIMARY SOURCE) ===\n" + ("\n\n".join(search_parts) if search_parts else "No matching permitted documents found.")
-        
+        context_parts = []
         if current_page_context:
-            context_str += f"\n\n{current_page_context}"
+            context_parts.append(current_page_context)
 
-        answer = self.generate_llm_response(query, context_str)
+        context_parts.append(f"=== SEARCH RESULTS ACROSS ALL PERMITTED ARTICLES (Matches for user query) ===\n" + ("\n\n".join(search_parts) if search_parts else "No matching permitted documents found."))
+        context_parts.append(f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}")
 
-        # Smart Citation Refinement for Fallback Cases
+        context_str = "\n\n".join(context_parts)
+
+        answer = self.generate_llm_response(query, context_str, history=history)
+
+        # Smart Hybrid Citation Management
         answer_lower = answer.lower()
         
-        # Only check contact page if permitted (all_pages is already filtered by allowed_page_ids)
-        has_it_fallback = "süleyman" in answer_lower or "who to contact" in answer_lower or "it support" in answer_lower
+        # 1) If active page was loaded: check if the answer references it or if question was about it
+        if active_page_loaded and current_page_id:
+            act_title_words = [w for w in (current_page_title or "").lower().split() if len(w) > 3]
+            is_active_page_referenced = (
+                is_page_summary_request
+                or (current_page_title and current_page_title.lower() in answer_lower)
+                or any(w in answer_lower for w in act_title_words)
+                or any(w in q_lower for w in ["buradaki", "bu sayfa", "bu makale", "bu adım", "here", "this page", "bu doküman", "özet"])
+            )
+            if is_active_page_referenced or not primary_sources_map:
+                active_entry = all_pages.get(int(current_page_id), {
+                    "page_id": int(current_page_id),
+                    "title": current_page_title or f"Page #{current_page_id}",
+                    "url": current_page_url or f"/link/{current_page_id}"
+                })
+                primary_sources_map[int(current_page_id)] = {
+                    "page_id": int(current_page_id),
+                    "title": active_entry.get("title", current_page_title),
+                    "url": active_entry.get("url", current_page_url)
+                }
+
+        # 2) Fallback / IT / Hardware routing: redirect citations to contact page
+        has_it_fallback = "süleyman" in answer_lower or "who to contact" in answer_lower or "it support" in answer_lower or "bilgisayar" in q_lower or "laptop" in q_lower
         
         if has_it_fallback:
             contact_page_id = None
@@ -360,11 +427,11 @@ class RAGEngine:
                         "url": info["url"]
                     }
             
-            # Clean out unrelated PISA pages from sources if answer was an IT fallback redirect
+            # If an IT / responsibility redirect occurred, clean out active page or unrelated project pages from citations
             if contact_page_id:
-                pisa_ids = [pid for pid, sinfo in list(primary_sources_map.items()) if "pisa" in sinfo["title"].lower()]
-                for pid in pisa_ids:
-                    del primary_sources_map[pid]
+                for pid in list(primary_sources_map.keys()):
+                    if pid != contact_page_id:
+                        del primary_sources_map[pid]
 
         return {
             "answer": answer,

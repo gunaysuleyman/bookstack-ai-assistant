@@ -39,6 +39,15 @@
   $tokenPayloadJson = json_encode($tokenPayloadData);
   $ragSecret = env('RAG_SECRET_TOKEN', 'my_super_secret_local_token_123');
   $tokenSignature = hash_hmac('sha256', $tokenPayloadJson, $ragSecret);
+
+  $activePageData = null;
+  if (isset($page) && $page instanceof \BookStack\Entities\Models\Page) {
+      $activePageData = [
+          'page_id' => (int) $page->id,
+          'title' => $page->name,
+          'url' => method_exists($page, 'getUrl') ? $page->getUrl() : null,
+      ];
+  }
 @endphp
 
 @if($canUseAI)
@@ -150,6 +159,65 @@
 
   .ai-chat-btn-action:hover {
     background: rgba(255, 255, 255, 0.35);
+  }
+
+  .ai-chat-btn-reset {
+    width: auto !important;
+    height: 26px !important;
+    padding: 0 10px !important;
+    border-radius: 13px !important;
+    font-size: 11.5px !important;
+    font-weight: 600;
+    gap: 4px;
+    display: inline-flex !important;
+  }
+
+  /* Context Warning Card */
+  .ai-context-warning-card {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-left: 4px solid #f59e0b;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #92400e;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 4px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    animation: chatSlideIn 0.2s ease-out;
+  }
+
+  .ai-warning-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+  }
+
+  .ai-warning-btn-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .ai-warning-reset-btn {
+    background: #f59e0b;
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s ease;
+  }
+
+  .ai-warning-reset-btn:hover {
+    background: #d97706;
   }
 
   /* Page Awareness Context Bar */
@@ -415,6 +483,7 @@
       payload: {!! json_encode($tokenPayloadJson) !!},
       sig: "{{ $tokenSignature }}"
     };
+    const SERVER_ACTIVE_PAGE = {!! json_encode($activePageData) !!};
 
     function injectWidgetDOM() {
       if (document.getElementById("ai-search-fab")) return;
@@ -427,6 +496,7 @@
           <div class="ai-chat-header">
             <h4 class="ai-chat-header-title">✨ BookStack AI Assistant</h4>
             <div class="ai-chat-header-actions">
+              <button class="ai-chat-btn-action ai-chat-btn-reset" id="ai-chat-reset-btn" type="button" title="Start New Chat">🔄 New Chat</button>
               <button class="ai-chat-btn-action" id="ai-chat-close-btn" type="button" title="Close">&times;</button>
             </div>
           </div>
@@ -462,17 +532,32 @@
     }
 
     function getCurrentPageContext() {
+      if (SERVER_ACTIVE_PAGE && SERVER_ACTIVE_PAGE.page_id) {
+        return {
+          title: SERVER_ACTIVE_PAGE.title || document.title.replace(/ \| BookStack.*$/, '').trim(),
+          url: SERVER_ACTIVE_PAGE.url || window.location.href,
+          path: window.location.pathname,
+          page_id: parseInt(SERVER_ACTIVE_PAGE.page_id),
+          is_page: true
+        };
+      }
+
       const cleanTitle = document.title.replace(/ \| BookStack.*$/, '').trim();
       const url = window.location.href;
       const path = window.location.pathname;
 
       let pageId = null;
-      const metaId = document.querySelector('meta[name="page-id"]') || document.querySelector('[data-page-id]');
-      if (metaId) {
-        pageId = metaId.getAttribute('content') || metaId.getAttribute('data-page-id');
+      const pageElem = document.querySelector('[option\\:page-display\\:page-id]') 
+                    || document.querySelector('[component="page-display"]')
+                    || document.querySelector('meta[name="page-id"]') 
+                    || document.querySelector('[data-page-id]');
+      if (pageElem) {
+        pageId = pageElem.getAttribute('option:page-display:page-id')
+              || pageElem.getAttribute('data-page-id')
+              || pageElem.getAttribute('content');
       }
 
-      const isPage = path.includes('/page/') || path.includes('/books/') || Boolean(pageId);
+      const isPage = Boolean(pageId) || path.includes('/page/');
 
       return {
         title: cleanTitle,
@@ -509,6 +594,7 @@
       const fab = document.getElementById("ai-search-fab");
       const panel = document.getElementById("ai-chat-panel");
       const closeBtn = document.getElementById("ai-chat-close-btn");
+      const resetBtn = document.getElementById("ai-chat-reset-btn");
       const sendBtn = document.getElementById("ai-chat-send-btn");
       const input = document.getElementById("ai-chat-input");
       const msgArea = document.getElementById("ai-chat-messages");
@@ -520,6 +606,21 @@
       if (!fab || !panel) return;
 
       let isOpen = false;
+      let chatHistory = [];
+      let sessionTurnCount = 0;
+
+      function resetChatSession() {
+        chatHistory = [];
+        sessionTurnCount = 0;
+        msgArea.innerHTML = `
+          <div class="ai-msg ai-msg-assistant">
+            Chat session has been reset. How can I assist you with your BookStack documentation today?
+          </div>
+        `;
+        document.querySelectorAll(".ai-context-warning-card").forEach(el => el.remove());
+        updatePageContextUI();
+        if (input) input.focus();
+      }
 
       function updatePageContextUI() {
         const pageCtx = getCurrentPageContext();
@@ -664,6 +765,13 @@
         });
       }
 
+      if (resetBtn) {
+        resetBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          resetChatSession();
+        });
+      }
+
       async function sendQuestion(customQuery) {
         const query = customQuery || input.value.trim();
         if (!query) return;
@@ -675,6 +783,10 @@
         userMsg.innerText = query;
         msgArea.appendChild(userMsg);
 
+        // Keep multi-turn history
+        sessionTurnCount++;
+        chatHistory.push({ role: "user", content: query });
+
         if (!customQuery) input.value = "";
         sendBtn.disabled = true;
 
@@ -682,6 +794,8 @@
         loadingMsg.className = "ai-msg ai-msg-assistant";
 
         if (!isUserLoggedIn()) {
+          chatHistory.pop();
+          sessionTurnCount = Math.max(0, sessionTurnCount - 1);
           loadingMsg.innerHTML = "🔒 <strong>Authentication Required:</strong> Please log in to your BookStack account to use the AI Assistant.";
           msgArea.appendChild(loadingMsg);
           sendBtn.disabled = false;
@@ -720,7 +834,9 @@
               query: query,
               top_k: 6,
               current_page: pageCtx.is_page ? pageCtx : null,
-              user_token: USER_SECURITY_TOKEN
+              user_token: USER_SECURITY_TOKEN,
+              history: chatHistory.slice(-8),
+              total_session_turns: sessionTurnCount
             })
           });
 
@@ -730,6 +846,10 @@
 
           const data = await response.json();
           loadingMsg.innerHTML = parseMarkdownToHTML(data.answer || "No answer returned.");
+
+          if (data.answer) {
+            chatHistory.push({ role: "assistant", content: data.answer });
+          }
 
           if (data.sources && data.sources.length > 0) {
             const sourcesDiv = document.createElement("div");
@@ -751,7 +871,35 @@
 
             loadingMsg.appendChild(sourcesDiv);
           }
+
+          // Check if context window limit warning is suggested
+          if (data.context_usage && data.context_usage.suggest_new_chat) {
+            const oldCard = msgArea.querySelector(".ai-context-warning-card");
+            if (oldCard) oldCard.remove();
+
+            const warnCard = document.createElement("div");
+            warnCard.className = "ai-context-warning-card";
+            warnCard.innerHTML = `
+              <div class="ai-warning-header">
+                <span>⚠️</span>
+                <span>Conversation Length Notice</span>
+              </div>
+              <div>
+                This conversation has reached an extended length (${data.context_usage.turn_count} questions). To ensure the highest speed, accuracy, and topic focus, starting a new chat session is recommended.
+              </div>
+              <div class="ai-warning-btn-row">
+                <button type="button" class="ai-warning-reset-btn">🔄 Start New Chat</button>
+              </div>
+            `;
+            warnCard.querySelector(".ai-warning-reset-btn").addEventListener("click", function (e) {
+              e.preventDefault();
+              resetChatSession();
+            });
+            msgArea.appendChild(warnCard);
+          }
         } catch (err) {
+          chatHistory.pop(); // Remove pending user message on error
+          sessionTurnCount = Math.max(0, sessionTurnCount - 1);
           loadingMsg.innerHTML = `<span style="color: #ef4444;">⚠️ ${err.message}. Ensure RAG service is running.</span>`;
         } finally {
           sendBtn.disabled = false;

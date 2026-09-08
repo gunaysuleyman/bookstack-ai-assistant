@@ -64,6 +64,7 @@ services:
       - CHROMA_PERSIST_DIR=/app/chroma_db
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     volumes:
+      - ./rag_service:/app
       - chroma_data:/app/chroma_db
     restart: unless-stopped
     depends_on:

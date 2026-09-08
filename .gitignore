@@ -33,4 +33,5 @@ desktop.ini
 # Logs
 *.log
 
-
+# AI Assistant Workspace Rules & Agents
+.agents/

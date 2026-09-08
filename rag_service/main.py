@@ -39,11 +39,17 @@ def verify_token(x_rag_token: Optional[str] = Header(None)):
     if RAG_SECRET_TOKEN and x_rag_token != RAG_SECRET_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing X-RAG-Token header")
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class SearchQuery(BaseModel):
     query: str
     top_k: Optional[int] = 6
     current_page: Optional[Dict[str, Any]] = None
     user_token: Optional[Dict[str, Any]] = None
+    history: Optional[List[ChatMessage]] = None
+    total_session_turns: Optional[int] = None
 
 def extract_allowed_page_ids(user_token: Optional[Dict[str, Any]]) -> Optional[List[int]]:
     """
@@ -122,12 +128,36 @@ def ai_search(payload: SearchQuery, x_rag_token: Optional[str] = Header(None)):
         f"Permitted Pages: {len(allowed_page_ids) if allowed_page_ids is not None else 'All'})"
     )
 
+    history_dicts = [{"role": m.role, "content": m.content} for m in payload.history] if payload.history else []
+
     result = rag_engine.search_and_answer(
         query=payload.query,
         top_k=payload.top_k,
         current_page=payload.current_page,
-        allowed_page_ids=allowed_page_ids
+        allowed_page_ids=allowed_page_ids,
+        history=history_dicts
     )
+
+    # Context Usage & Threshold Calculation
+    client_turns = payload.total_session_turns or 0
+    history_turns = (len(history_dicts) // 2) + 1
+    turn_count = max(client_turns, history_turns)
+
+    history_chars = sum(len(m["content"]) for m in history_dicts)
+    answer_chars = len(result.get("answer", ""))
+    est_tokens = (len(payload.query) + history_chars + answer_chars) // 4
+    
+    max_turns = int(os.getenv("MAX_RECOMMENDED_TURNS", "5"))
+    # Proactively suggest new chat if turn_count reaches threshold or token estimate is high
+    suggest_new_chat = bool(turn_count >= max_turns or est_tokens >= 3500)
+
+    result["context_usage"] = {
+        "turn_count": turn_count,
+        "estimated_tokens": est_tokens,
+        "max_recommended_turns": max_turns,
+        "suggest_new_chat": suggest_new_chat
+    }
+
     return result
 
 @app.post("/api/sync")
