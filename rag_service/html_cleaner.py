@@ -1,6 +1,7 @@
 import re
 import html2text
-from typing import List, Dict, Any
+from bs4 import BeautifulSoup
+from typing import List, Dict, Any, Optional
 
 class HTMLCleaner:
     def __init__(self):
@@ -10,10 +11,41 @@ class HTMLCleaner:
         self.h2t.ignore_tables = False
         self.h2t.body_width = 0
 
-    def clean_to_markdown(self, html_content: str) -> str:
-        """Converts BookStack HTML string to clean Markdown."""
+    def clean_to_markdown(self, html_content: str, image_descriptions: Optional[Dict[str, str]] = None) -> str:
+        """
+        Converts BookStack HTML string to clean Markdown.
+        Injects rich visual context and OCR descriptions for images if provided,
+        without raw image markdown links.
+        """
         if not html_content:
             return ""
+
+        if image_descriptions:
+            try:
+                soup = BeautifulSoup(html_content, "html.parser")
+                for img in soup.find_all("img"):
+                    src = img.get("src", "").strip()
+                    alt = img.get("alt", "").strip() or img.get("title", "").strip() or "Ekran Görüntüsü"
+                    desc = image_descriptions.get(src)
+                    if desc:
+                        # Construct a rich visual block without raw image link
+                        clean_lines = [line.strip() for line in desc.splitlines() if line.strip()]
+                        formatted_desc = "<br/>".join(clean_lines)
+                        replacement_html = f"""
+                        <p>
+                            <strong>[Görsel / Ekran Görüntüsü: {alt}]</strong><br/>
+                            <blockquote>
+                                <strong>📷 Visual Context &amp; OCR:</strong><br/>
+                                {formatted_desc}
+                            </blockquote>
+                        </p>
+                        """
+                        new_tag = BeautifulSoup(replacement_html, "html.parser")
+                        img.replace_with(new_tag)
+                html_content = str(soup)
+            except Exception as e:
+                pass
+
         markdown = self.h2t.handle(html_content)
         markdown = re.sub(r'\n{3,}', '\n\n', markdown).strip()
         return markdown

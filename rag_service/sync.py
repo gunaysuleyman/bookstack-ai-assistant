@@ -1,9 +1,10 @@
 import os
 import logging
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from html_cleaner import HTMLCleaner
 from rag_engine import RAGEngine
+from image_processor import ImageProcessor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BookStackSync")
@@ -16,6 +17,7 @@ class BookStackSync:
         self.token_secret = os.getenv("BOOKSTACK_TOKEN_SECRET", "")
         self.cleaner = HTMLCleaner()
         self.rag_engine = rag_engine
+        self.image_processor = ImageProcessor(db_dir=self.rag_engine.chroma_dir)
         
         self.book_cache: Dict[int, Dict[str, Any]] = {}
         self.chapter_cache: Dict[int, str] = {}
@@ -113,15 +115,28 @@ class BookStackSync:
             # Direct BookStack permalink: /link/{page_id}
             page_data["url"] = f"{self.external_url}/link/{page_id}"
 
+            html_content = page_data.get("html", "")
+            image_descriptions = {}
+            if html_content:
+                try:
+                    image_descriptions = self.image_processor.process_page_images(
+                        page_id=page_id,
+                        html_content=html_content,
+                        auth_headers=self._get_headers()
+                    )
+                    if image_descriptions:
+                        logger.info(f"Page ID {page_id}: Processed {len(image_descriptions)} images with visual descriptions.")
+                except Exception as img_err:
+                    logger.warning(f"Image processing failed for page {page_id}: {img_err}")
+
             # Check if BookStack API returned direct Markdown first
             raw_markdown = page_data.get("markdown", "")
-            if raw_markdown and isinstance(raw_markdown, str) and raw_markdown.strip():
+            if raw_markdown and isinstance(raw_markdown, str) and raw_markdown.strip() and not image_descriptions:
                 markdown = raw_markdown.strip()
                 logger.info(f"Page ID {page_id}: Used direct Markdown from BookStack API.")
             else:
-                html_content = page_data.get("html", "")
-                markdown = self.cleaner.clean_to_markdown(html_content)
-                logger.info(f"Page ID {page_id}: Converted HTML content to Markdown.")
+                markdown = self.cleaner.clean_to_markdown(html_content, image_descriptions=image_descriptions)
+                logger.info(f"Page ID {page_id}: Converted HTML content to Markdown with visual context.")
 
             chunks = self.cleaner.chunk_markdown(markdown, page_data)
 

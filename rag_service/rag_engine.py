@@ -101,7 +101,7 @@ class RAGEngine:
         full_prompt = f"{system_instruction}\n\n{user_prompt}"
 
         if self.provider == "gemini":
-            models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest"]
+            models_to_try = ["gemini-2.5-flash", "gemini-flash-latest"]
             last_err = None
             for model_name in models_to_try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_key}"
@@ -200,7 +200,8 @@ class RAGEngine:
             "   - If the question connects both the active page and external articles, synthesize information from both smoothly and cite all relevant articles.\n"
             "6. CONVERSATION CONTINUITY: When 'RECENT CONVERSATION HISTORY' is provided, maintain context and continuity with earlier answers while staying strictly grounded in the documentation.\n"
             "7. LANGUAGE DYNAMICS: Match the language of the user's question. If the user asks in Turkish, reply in Turkish. If the user asks in English, reply in English.\n"
-            "8. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles."
+            "8. FORMATTING: Use clean markdown, bullet points, and bold terms for key names/titles.\n"
+            "9. VISUAL INTELLIGENCE (NO IMAGE LINKS): When a document contains visual context blocks (marked by '📷 Visual Context & OCR'), treat these descriptions as if you have directly viewed the screenshot. Explain the visual interface, UI elements, and steps thoroughly and cleanly in text using bullet points. DO NOT output image markdown embeds (NEVER write ![...](url)) and DO NOT output raw image URLs. Refer to images simply as 'Ekran görüntüsünde...', 'Görsel 1'de...', etc."
         )
 
         history_text = ""
