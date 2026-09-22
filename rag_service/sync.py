@@ -31,7 +31,7 @@ class BookStackSync:
     def _get_book_details(self, book_id: int, client: httpx.Client) -> Dict[str, Any]:
         """Fetches parent book title and associated shelf names with caching."""
         if not book_id:
-            return {"book_name": "Genel Kütüphane", "shelf_name": "Genel Raf"}
+            return {"book_name": "General Library", "shelf_name": "General Shelf"}
         if book_id in self.book_cache:
             return self.book_cache[book_id]
         try:
@@ -39,11 +39,11 @@ class BookStackSync:
             res = client.get(url, headers=self._get_headers())
             if res.status_code == 200:
                 data = res.json()
-                bname = data.get("name", f"Kitap #{book_id}")
+                bname = data.get("name", f"Book #{book_id}")
                 
                 # Fetch parent shelf if exists
                 shelves = data.get("shelves", [])
-                sname = shelves[0]["name"] if (shelves and isinstance(shelves, list) and len(shelves) > 0 and "name" in shelves[0]) else "Genel Raf"
+                sname = shelves[0]["name"] if (shelves and isinstance(shelves, list) and len(shelves) > 0 and "name" in shelves[0]) else "General Shelf"
                 
                 res_dict = {"book_name": bname, "shelf_name": sname}
                 self.book_cache[book_id] = res_dict
@@ -51,26 +51,26 @@ class BookStackSync:
         except Exception as e:
             logger.warning(f"Could not fetch book {book_id}: {e}")
         
-        res_dict = {"book_name": f"Kitap #{book_id}", "shelf_name": "Genel Raf"}
+        res_dict = {"book_name": f"Book #{book_id}", "shelf_name": "General Shelf"}
         self.book_cache[book_id] = res_dict
         return res_dict
 
     def _get_chapter_name(self, chapter_id: int, client: httpx.Client) -> str:
         """Fetches chapter title by chapter_id with caching."""
         if not chapter_id:
-            return "Genel Bölüm"
+            return "General Chapter"
         if chapter_id in self.chapter_cache:
             return self.chapter_cache[chapter_id]
         try:
             url = f"{self.bookstack_url}/api/chapters/{chapter_id}"
             res = client.get(url, headers=self._get_headers())
             if res.status_code == 200:
-                name = res.json().get("name", f"Bölüm #{chapter_id}")
+                name = res.json().get("name", f"Chapter #{chapter_id}")
                 self.chapter_cache[chapter_id] = name
                 return name
         except Exception as e:
             logger.warning(f"Could not fetch chapter {chapter_id}: {e}")
-        return f"Bölüm #{chapter_id}"
+        return f"Chapter #{chapter_id}"
 
     def sync_single_page(self, page_id: int):
         """Syncs a single page by ID with full 4-tier hierarchy metadata."""
@@ -91,13 +91,13 @@ class BookStackSync:
 
                 # Fetch parent Book and Shelf details
                 book_id = page_data.get("book_id")
-                book_info = self._get_book_details(book_id, client) if book_id else {"book_name": "Genel Kütüphane", "shelf_name": "Genel Raf"}
+                book_info = self._get_book_details(book_id, client) if book_id else {"book_name": "General Library", "shelf_name": "General Shelf"}
                 page_data["book_name"] = book_info["book_name"]
                 page_data["shelf_name"] = book_info["shelf_name"]
 
                 # Fetch parent Chapter details
                 chapter_id = page_data.get("chapter_id")
-                page_data["chapter_name"] = self._get_chapter_name(chapter_id, client) if chapter_id else "Genel Bölüm"
+                page_data["chapter_name"] = self._get_chapter_name(chapter_id, client) if chapter_id else "General Chapter"
 
                 # Process tags
                 raw_tags = page_data.get("tags", [])

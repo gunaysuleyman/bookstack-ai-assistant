@@ -33,6 +33,7 @@ services:
       - DB_DATABASE=${DB_NAME:-bookstackapp}
       - ALLOWED_SSR_HOSTS=rag_service,localhost,127.0.0.1
       - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - RAG_SERVICE_PUBLIC_URL=${RAG_SERVICE_PUBLIC_URL:-http://localhost:8000/api/ai-search}
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     ports:
       - "6875:80"
@@ -60,7 +61,11 @@ services:
       - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
+      - GEMINI_VISION_MODEL=${GEMINI_VISION_MODEL:-gemini-3.8-flash}
+      - GEMINI_FALLBACK_MODELS=${GEMINI_FALLBACK_MODELS:-gemini-flash-latest,gemini-3.6-flash}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - CHROMA_PERSIST_DIR=/app/chroma_db
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     volumes:

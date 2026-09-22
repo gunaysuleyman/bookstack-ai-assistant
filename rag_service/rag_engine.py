@@ -14,6 +14,10 @@ class RAGEngine:
         self.provider = os.getenv("AI_PROVIDER", "gemini").lower()
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        fallback_str = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-flash-latest,gemini-3.6-flash")
+        self.gemini_fallbacks = [m.strip() for m in fallback_str.split(",") if m.strip()]
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.chroma_dir = os.getenv("CHROMA_PERSIST_DIR", "/app/chroma_db")
 
         self.embedding_fn = embedding_functions.DefaultEmbeddingFunction()
@@ -101,7 +105,7 @@ class RAGEngine:
         full_prompt = f"{system_instruction}\n\n{user_prompt}"
 
         if self.provider == "gemini":
-            models_to_try = ["gemini-2.5-flash", "gemini-flash-latest"]
+            models_to_try = [self.gemini_model] + [m for m in self.gemini_fallbacks if m != self.gemini_model]
             last_err = None
             for model_name in models_to_try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_key}"
@@ -123,7 +127,7 @@ class RAGEngine:
         elif self.provider == "openai":
             headers = {"Authorization": f"Bearer {self.openai_key}"}
             payload = {
-                "model": "gpt-4o-mini",
+                "model": self.openai_model,
                 "messages": [
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": user_prompt}
@@ -159,9 +163,9 @@ class RAGEngine:
             "  * 'OVERVIEW': ONLY when the user asks for a global list of all shelves/books or library statistics (e.g. 'hangi kitaplıklar var', 'bütün sayfaları listele', 'sistemde neler var'). Questions about 'this page' / 'bu sayfa' or specific topics are NEVER OVERVIEW.\n"
             "  * 'SEARCH': For ANY question about a topic, procedure, or asking about a specific page or the current page (e.g. 'bu sayfa ile alakalı ne biliyorsun', 'bu nedir', 'özetle', 'nasıl yapılır' are ALWAYS SEARCH).\n"
             "- 'optimized_query': string (search query for vector retrieval if SEARCH, else empty).\n"
-            "CRITICAL NOTE FOR 'optimized_query': The documentation is in English. If the user asks in Turkish or other languages, ALWAYS include key English translation terms and synonyms alongside original terms (e.g., if user asks 'bilgisayarım bozuldu' or 'donanım arızası', include 'laptop computer not working broken hardware equipment IT support contact').\n\n"
+            "CRITICAL NOTE FOR 'optimized_query': Expand the query with relevant technical keywords, synonyms, and translations matching the documentation language to maximize vector search retrieval accuracy.\n\n"
             f"{history_snippet}User Query: '{query}'\n\n"
-            "Respond ONLY with valid JSON, e.g. {\"intent\": \"SEARCH\", \"optimized_query\": \"bilgisayar bozuldu laptop computer not working broken hardware IT support who to contact\"}"
+            "Respond ONLY with valid JSON, e.g. {\"intent\": \"SEARCH\", \"optimized_query\": \"expanded technical keywords\"}"
         )
 
         try:
@@ -170,16 +174,8 @@ class RAGEngine:
             data = json.loads(clean_json)
             return data
         except Exception as e:
-            logger.warning(f"Intent Router fallback due to parsing error: {e}")
-            q_lower = query.strip().lower()
-            if any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "burada", "buradaki", "özet", "özetle", "ne biliyorsun"]):
-                return {"intent": "SEARCH", "optimized_query": query}
-            elif q_lower in ["hello", "hi", "hey", "merhaba", "selam", "günaydın", "iyi günler", "thanks", "teşekkürler"]:
-                return {"intent": "GREETING", "optimized_query": query}
-            elif any(w in q_lower for w in ["kaç", "hangi", "makale", "doküman", "sayfa", "kitap", "raf", "bölüm", "etiket", "liste", "list", "how many", "which", "books", "pages", "shelves"]):
-                return {"intent": "OVERVIEW", "optimized_query": query}
-            else:
-                return {"intent": "SEARCH", "optimized_query": query}
+            logger.warning(f"Intent Router parsing failed: {e}. Defaulting to standard search.")
+            return {"intent": "SEARCH", "optimized_query": query}
 
     def generate_llm_response(self, prompt: str, context: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """LAYER 2: Generates final response based on retrieved context, history and system instructions."""
@@ -190,9 +186,9 @@ class RAGEngine:
             "1. PRIMARY SOURCE: Rely strictly on the provided 'SEARCH RESULTS (MOST RELEVANT ARTICLES)' and 'DOCUMENT CATALOG' to answer questions.\n"
             "2. SPECIFIC TARGETING: If the user asks about a specific issue, answer directly from the matching article.\n"
             "3. STRICT PERMISSION BOUNDARY: The user is only authorized to see the articles provided in the context. You must ONLY answer based on these provided articles. Never mention, reference, assume, or invent articles, departments, or personnel that are not explicitly present in the provided context.\n"
-            "4. INTELLIGENT DOMAIN FALLBACK RULE: If a user asks about a topic or issue that does NOT have a specific step-by-step article in the provided documentation:\n"
-            "   - If the provided documentation contains a responsibility/contact guide (e.g. WHO TO CONTACT), use that guide to direct the user to the appropriate contact person.\n"
-            "   - If no relevant document or contact guide is present in the provided context, state clearly and politely that there is no accessible documentation for this topic in the system.\n"
+            "4. MISSING DOCUMENTATION RULE: If a user asks about a topic or procedure that is not present in the provided documentation:\n"
+            "   - If the documentation contains a relevant contact or support directory, guide the user to that department or person.\n"
+            "   - Otherwise, state clearly and politely that there is no accessible documentation for this topic in the system.\n"
             "5. ACTIVE PAGE AWARENESS & HYBRID CONTEXT ROUTING:\n"
             "   - When 'CURRENT ACTIVE PAGE' is provided, the user is currently reading that specific article in BookStack.\n"
             "   - If the user's question relates to the topics, steps, instructions, requirements, or content on this active page, or uses contextual references (such as 'buradaki', 'bu adımlar', 'bu sayfa', 'bu işlem', 'here', 'these steps', 'bu doküman'), prioritize answering directly and thoroughly from the CURRENT ACTIVE PAGE context.\n"
@@ -335,20 +331,6 @@ class RAGEngine:
                     "url": meta.get("url")
                 }
 
-        if not primary_sources_map and metadatas:
-            for meta in metadatas:
-                pid = meta.get("page_id")
-                if allowed_page_ids is not None and (pid is None or pid not in allowed_page_ids):
-                    continue
-                if pid and pid not in primary_sources_map:
-                    primary_sources_map[pid] = {
-                        "page_id": pid,
-                        "title": meta.get("name"),
-                        "url": meta.get("url")
-                    }
-                if len(primary_sources_map) >= 2:
-                    break
-
         # Handle Active Page Context (always inject if user is currently reading an authorized page)
         q_lower = query.lower()
         is_page_summary_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "özetle", "summarize", "buradaki", "bu doküman", "burada"])
@@ -393,7 +375,7 @@ class RAGEngine:
         # Smart Hybrid Citation Management
         answer_lower = answer.lower()
         
-        # 1) If active page was loaded: check if the answer references it or if question was about it
+        # If active page was loaded: check if the answer references it or if question was specifically about it
         if active_page_loaded and current_page_id:
             act_title_words = [w for w in (current_page_title or "").lower().split() if len(w) > 3]
             is_active_page_referenced = (
@@ -402,7 +384,7 @@ class RAGEngine:
                 or any(w in answer_lower for w in act_title_words)
                 or any(w in q_lower for w in ["buradaki", "bu sayfa", "bu makale", "bu adım", "here", "this page", "bu doküman", "özet"])
             )
-            if is_active_page_referenced or not primary_sources_map:
+            if is_active_page_referenced:
                 active_entry = all_pages.get(int(current_page_id), {
                     "page_id": int(current_page_id),
                     "title": current_page_title or f"Page #{current_page_id}",
@@ -413,26 +395,6 @@ class RAGEngine:
                     "title": active_entry.get("title", current_page_title),
                     "url": active_entry.get("url", current_page_url)
                 }
-
-        # 2) Fallback / IT / Hardware routing: redirect citations to contact page
-        has_it_fallback = "süleyman" in answer_lower or "who to contact" in answer_lower or "it support" in answer_lower or "bilgisayar" in q_lower or "laptop" in q_lower
-        
-        if has_it_fallback:
-            contact_page_id = None
-            for pid, info in all_pages.items():
-                if "who to contact" in info["title"].lower() or "who is responsible" in info["title"].lower():
-                    contact_page_id = pid
-                    primary_sources_map[pid] = {
-                        "page_id": pid,
-                        "title": info["title"],
-                        "url": info["url"]
-                    }
-            
-            # If an IT / responsibility redirect occurred, clean out active page or unrelated project pages from citations
-            if contact_page_id:
-                for pid in list(primary_sources_map.keys()):
-                    if pid != contact_page_id:
-                        del primary_sources_map[pid]
 
         return {
             "answer": answer,

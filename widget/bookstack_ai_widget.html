@@ -38,6 +38,7 @@
   ];
   $tokenPayloadJson = json_encode($tokenPayloadData);
   $ragSecret = env('RAG_SECRET_TOKEN', 'my_super_secret_local_token_123');
+  $ragPublicUrl = env('RAG_SERVICE_PUBLIC_URL', 'http://localhost:8000/api/ai-search');
   $tokenSignature = hash_hmac('sha256', $tokenPayloadJson, $ragSecret);
 
   $activePageData = null;
@@ -477,8 +478,8 @@
 
 <script nonce="{{ $cspNonce ?? '' }}">
   (function () {
-    const RAG_SERVICE_URL = "http://localhost:8000/api/ai-search";
-    const RAG_SECRET_TOKEN = "my_super_secret_local_token_123";
+    const RAG_SERVICE_URL = "{{ $ragPublicUrl }}";
+    const RAG_SECRET_TOKEN = "{{ $ragSecret }}";
     const USER_SECURITY_TOKEN = {
       payload: {!! json_encode($tokenPayloadJson) !!},
       sig: "{{ $tokenSignature }}"

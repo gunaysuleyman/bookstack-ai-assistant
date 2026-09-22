@@ -59,17 +59,17 @@ class HTMLCleaner:
         if not text:
             return []
 
-        shelf_name = page_meta.get("shelf_name", "Genel Raf")
-        book_name = page_meta.get("book_name", "Genel Kütüphane")
-        chapter_name = page_meta.get("chapter_name", "Genel Bölüm")
-        page_title = page_meta.get("name", "İsimsiz Doküman")
+        shelf_name = page_meta.get("shelf_name", "General Shelf")
+        book_name = page_meta.get("book_name", "General Library")
+        chapter_name = page_meta.get("chapter_name", "General Chapter")
+        page_title = page_meta.get("name", "Untitled Document")
         page_id = page_meta.get("id")
         tags_str = page_meta.get("tags_str", "")
 
         # Split text into section blocks by headings (#, ##, ###)
         lines = text.splitlines()
         sections = []
-        current_heading = "Giriş"
+        current_heading = "Introduction"
         current_lines = []
 
         heading_re = re.compile(r'^(#{1,6})\s+(.*)$')
@@ -90,13 +90,13 @@ class HTMLCleaner:
         chunks = []
         chunk_idx = 0
 
-        tags_header = f" [Etiketler: {tags_str}]" if tags_str else ""
+        tags_header = f" [Tags: {tags_str}]" if tags_str else ""
 
         for heading, section_text in sections:
             if not section_text:
                 continue
 
-            header_context = f"[Raf: {shelf_name}] > [Kitap: {book_name}] > [Bölüm: {chapter_name}] > [Sayfa: {page_title}]{tags_header}\n[Alt Başlık: {heading}]"
+            header_context = f"[Shelf: {shelf_name}] > [Book: {book_name}] > [Chapter: {chapter_name}] > [Page: {page_title}]{tags_header}\n[Section: {heading}]"
 
             # If section is small enough, make it a chunk
             if len(section_text) <= max_size:

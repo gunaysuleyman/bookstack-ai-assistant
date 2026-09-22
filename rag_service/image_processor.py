@@ -12,6 +12,9 @@ logger = logging.getLogger("ImageProcessor")
 class ImageProcessor:
     def __init__(self, db_dir: Optional[str] = None):
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
+        self.vision_model = os.getenv("GEMINI_VISION_MODEL") or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        fallback_str = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-flash-latest,gemini-3.6-flash")
+        self.vision_fallbacks = [m.strip() for m in fallback_str.split(",") if m.strip()]
         self.bookstack_internal_url = os.getenv("BOOKSTACK_URL", "http://bookstack:80").rstrip("/")
         self.bookstack_external_url = os.getenv("BOOKSTACK_EXTERNAL_URL", "http://localhost:6875").rstrip("/")
         
@@ -93,7 +96,7 @@ class ImageProcessor:
             logger.warning("No GEMINI_API_KEY found, skipping vision analysis.")
             return ""
 
-        models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash"]
+        models_to_try = [self.vision_model] + [m for m in self.vision_fallbacks if m != self.vision_model]
         base64_data = base64.b64encode(image_bytes).decode("utf-8")
 
         prompt_text = (
