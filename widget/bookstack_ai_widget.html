@@ -39,7 +39,28 @@
   $tokenPayloadJson = json_encode($tokenPayloadData);
   $ragSecret = env('RAG_SECRET_TOKEN', 'my_super_secret_local_token_123');
   $ragPublicUrl = env('RAG_SERVICE_PUBLIC_URL', 'http://localhost:8000/api/ai-search');
+  $ragInternalUrl = rtrim(env('RAG_INTERNAL_URL', 'http://rag_service:8000'), '/');
   $tokenSignature = hash_hmac('sha256', $tokenPayloadJson, $ragSecret);
+  $scopeRef = null;
+  try {
+      $registerBody = json_encode($tokenPayloadData);
+      $scopeContext = stream_context_create([
+          'http' => [
+              'method' => 'POST',
+              'header' => "Content-Type: application/json\r\nX-RAG-Token: {$ragSecret}\r\n",
+              'content' => $registerBody,
+              'timeout' => 1.5,
+              'ignore_errors' => true,
+          ],
+      ]);
+      $scopeRaw = @file_get_contents($ragInternalUrl . '/api/scope', false, $scopeContext);
+      $scopeDecoded = is_string($scopeRaw) ? json_decode($scopeRaw, true) : null;
+      if (is_array($scopeDecoded) && !empty($scopeDecoded['scope_ref'])) {
+          $scopeRef = $scopeDecoded['scope_ref'];
+      }
+  } catch (\Throwable $e) {
+      $scopeRef = null;
+  }
 
   $activePageData = null;
   if (isset($page) && $page instanceof \BookStack\Entities\Models\Page) {
@@ -479,11 +500,9 @@
 <script nonce="{{ $cspNonce ?? '' }}">
   (function () {
     const RAG_SERVICE_URL = "{{ $ragPublicUrl }}";
-    const RAG_SECRET_TOKEN = "{{ $ragSecret }}";
-    const USER_SECURITY_TOKEN = {
-      payload: {!! json_encode($tokenPayloadJson) !!},
-      sig: "{{ $tokenSignature }}"
-    };
+    const USER_SECURITY_TOKEN = {!! $scopeRef
+      ? json_encode(['scope_ref' => $scopeRef])
+      : json_encode(['payload' => $tokenPayloadJson, 'sig' => $tokenSignature]) !!};
     const SERVER_ACTIVE_PAGE = {!! json_encode($activePageData) !!};
 
     function injectWidgetDOM() {
@@ -828,8 +847,7 @@
           const response = await fetch(RAG_SERVICE_URL, {
             method: "POST",
             headers: {
-              "Content-Type": "application/json",
-              "X-RAG-Token": RAG_SECRET_TOKEN
+              "Content-Type": "application/json"
             },
             body: JSON.stringify({
               query: query,
@@ -841,6 +859,9 @@
             })
           });
 
+          if (response.status === 401 || response.status === 403) {
+            throw new Error("Oturum veya yetki doğrulanamadı. Sayfayı yenileyip tekrar deneyin.");
+          }
           if (!response.ok) {
             throw new Error(`Service Error (${response.status})`);
           }

@@ -1,0 +1,1670 @@
+{
+  "pages": [
+    {
+      "page_id": 1,
+      "name": "VPN Kurulumu",
+      "book_id": 1,
+      "book_name": "Ağ",
+      "chapter_id": 1,
+      "chapter_name": "Erişim",
+      "shelf_names": [
+        "Ağ Shelf"
+      ],
+      "tags_str": "Ağ",
+      "url": "http://wiki.example/link/1",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "WireGuard kurulum adımları: istemciyi indirin, tüneli açın, bağlantıyı sınayın. VPN onaylayan birim: Bilgi Güvenliği."
+    },
+    {
+      "page_id": 2,
+      "name": "VPN Onay Çelişkisi",
+      "book_id": 2,
+      "book_name": "Ağ",
+      "chapter_id": 2,
+      "chapter_name": "Erişim",
+      "shelf_names": [
+        "Ağ Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Ağ",
+      "url": "http://wiki.example/link/2",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Eski taslak notu. VPN onaylayan birim: İnsan Kaynakları."
+    },
+    {
+      "page_id": 3,
+      "name": "Yedekleme Hatası",
+      "book_id": 3,
+      "book_name": "Sistem",
+      "chapter_id": 3,
+      "chapter_name": "Hatalar",
+      "shelf_names": [
+        "Sistem Shelf"
+      ],
+      "tags_str": "Sistem",
+      "url": "http://wiki.example/link/3",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Hata kodu ERR-4412 disk dolduğunda çıkar. İletişim Deniz Aksoy deniz@example.com."
+    },
+    {
+      "page_id": 4,
+      "name": "New Hire Onboarding",
+      "book_id": 4,
+      "book_name": "People",
+      "chapter_id": 4,
+      "chapter_name": "Start",
+      "shelf_names": [
+        "People Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "People",
+      "url": "http://wiki.example/link/4",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "New hire onboarding: collect your badge at Floor 3 from the reception desk."
+    },
+    {
+      "page_id": 5,
+      "name": "Yıllık İzin",
+      "book_id": 5,
+      "book_name": "İnsan",
+      "chapter_id": 5,
+      "chapter_name": "Politika",
+      "shelf_names": [
+        "İnsan Shelf"
+      ],
+      "tags_str": "İnsan",
+      "url": "http://wiki.example/link/5",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Yıllık izin hakkı 14 gündür. Başvuru İnsan Kaynakları birimine yapılır."
+    },
+    {
+      "page_id": 6,
+      "name": "Güvenlik Duvarı",
+      "book_id": 6,
+      "book_name": "Ağ",
+      "chapter_id": 6,
+      "chapter_name": "Sınır",
+      "shelf_names": [
+        "Ağ Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Ağ",
+      "url": "http://wiki.example/link/6",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Güvenlik duvarında dış erişim için port 443 ve port 8443 açıktır."
+    },
+    {
+      "page_id": 7,
+      "name": "Yazıcı",
+      "book_id": 7,
+      "book_name": "Ofis",
+      "chapter_id": 7,
+      "chapter_name": "Donanım",
+      "shelf_names": [
+        "Ofis Shelf"
+      ],
+      "tags_str": "Ofis",
+      "url": "http://wiki.example/link/7",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Depo B yazıcısının modeli HP-M404. Kağıt sıkışınca kapağı kapatın."
+    },
+    {
+      "page_id": 8,
+      "name": "Parola Sıfırlama",
+      "book_id": 8,
+      "book_name": "Kimlik",
+      "chapter_id": 8,
+      "chapter_name": "Erişim",
+      "shelf_names": [
+        "Kimlik Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Kimlik",
+      "url": "http://wiki.example/link/8",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Parola sıfırlama self-service portal üzerinden yapılır. Yöneticiye e-posta ile parola gönderilmez."
+    },
+    {
+      "page_id": 9,
+      "name": "Olay Seviyesi",
+      "book_id": 9,
+      "book_name": "Operasyon",
+      "chapter_id": 9,
+      "chapter_name": "Olay",
+      "shelf_names": [
+        "Operasyon Shelf"
+      ],
+      "tags_str": "Operasyon",
+      "url": "http://wiki.example/link/9",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "SEV-1 olaylarda nöbet telefonu +90 212 555 0100 aranır."
+    },
+    {
+      "page_id": 10,
+      "name": "Atlas Sahibi",
+      "book_id": 10,
+      "book_name": "Projeler",
+      "chapter_id": 10,
+      "chapter_name": "Atlas",
+      "shelf_names": [
+        "Projeler Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Projeler",
+      "url": "http://wiki.example/link/10",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Proje Atlas sahibi Selin Karaca. E-posta adresi selin@example.com."
+    },
+    {
+      "page_id": 11,
+      "name": "Atlas Bütçe",
+      "book_id": 11,
+      "book_name": "Projeler",
+      "chapter_id": 11,
+      "chapter_name": "Atlas",
+      "shelf_names": [
+        "Projeler Shelf"
+      ],
+      "tags_str": "Projeler",
+      "url": "http://wiki.example/link/11",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Proje Atlas bütçe kodu ATL-19 olarak finans sistemine işlenir."
+    },
+    {
+      "page_id": 12,
+      "name": "Misafir Ağ",
+      "book_id": 12,
+      "book_name": "Ağ",
+      "chapter_id": 12,
+      "chapter_name": "Kablosuz",
+      "shelf_names": [
+        "Ağ Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Ağ",
+      "url": "http://wiki.example/link/12",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Misafir kablosuz ağının SSID değeri Misafir olarak yayınlanır."
+    },
+    {
+      "page_id": 13,
+      "name": "Yedekleme Takvimi",
+      "book_id": 13,
+      "book_name": "Sistem",
+      "chapter_id": 13,
+      "chapter_name": "Yedek",
+      "shelf_names": [
+        "Sistem Shelf"
+      ],
+      "tags_str": "Sistem",
+      "url": "http://wiki.example/link/13",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Backup schedule starts at 02:00 UTC and retention is 30 days."
+    },
+    {
+      "page_id": 14,
+      "name": "Sertifika",
+      "book_id": 14,
+      "book_name": "Sistem",
+      "chapter_id": 14,
+      "chapter_name": "TLS",
+      "shelf_names": [
+        "Sistem Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Sistem",
+      "url": "http://wiki.example/link/14",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "TLS certificate renewal starts 30 days before expiry and is owned by the Platform team."
+    },
+    {
+      "page_id": 15,
+      "name": "Dizüstü Talebi",
+      "book_id": 15,
+      "book_name": "Donanım",
+      "chapter_id": 15,
+      "chapter_name": "Talep",
+      "shelf_names": [
+        "Donanım Shelf"
+      ],
+      "tags_str": "Donanım",
+      "url": "http://wiki.example/link/15",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Dizüstü talebi BT-12 formu ile açılır ve Satın Alma birimi onaylar."
+    },
+    {
+      "page_id": 16,
+      "name": "API Limit",
+      "book_id": 16,
+      "book_name": "Yazılım",
+      "chapter_id": 16,
+      "chapter_name": "API",
+      "shelf_names": [
+        "Yazılım Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Yazılım",
+      "url": "http://wiki.example/link/16",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "API clients receive HTTP 429 when the retry-after header must be honored."
+    },
+    {
+      "page_id": 17,
+      "name": "Toplantı Odası",
+      "book_id": 17,
+      "book_name": "Ofis",
+      "chapter_id": 17,
+      "chapter_name": "Mekan",
+      "shelf_names": [
+        "Ofis Shelf"
+      ],
+      "tags_str": "Ofis",
+      "url": "http://wiki.example/link/17",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Oditoryum kapasitesi 40 kişidir. Rezervasyon resepsiyon üzerinden yapılır."
+    },
+    {
+      "page_id": 18,
+      "name": "VPN İstemci Yolu",
+      "book_id": 18,
+      "book_name": "Ağ",
+      "chapter_id": 18,
+      "chapter_name": "Erişim",
+      "shelf_names": [
+        "Ağ Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Ağ",
+      "url": "http://wiki.example/link/18",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "WireGuard istemci paketi /tools/vpn-client yolundan indirilir."
+    },
+    {
+      "page_id": 19,
+      "name": "Veri Sınıfları",
+      "book_id": 19,
+      "book_name": "Güvenlik",
+      "chapter_id": 19,
+      "chapter_name": "Politika",
+      "shelf_names": [
+        "Güvenlik Shelf"
+      ],
+      "tags_str": "Güvenlik",
+      "url": "http://wiki.example/link/19",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Veri sınıfları Gizli, Hizmete Özel ve Genel olarak ayrılır."
+    },
+    {
+      "page_id": 20,
+      "name": "Dağıtım Listesi",
+      "book_id": 20,
+      "book_name": "Yazılım",
+      "chapter_id": 20,
+      "chapter_name": "Sürüm",
+      "shelf_names": [
+        "Yazılım Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Yazılım",
+      "url": "http://wiki.example/link/20",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Dağıtım kontrol listesi: sürümü etiketle, migrasyonu çalıştır, sağlık kontrolünü doğrula, duyuruyu yayınla."
+    },
+    {
+      "page_id": 21,
+      "name": "Ücret Cetveli",
+      "book_id": 21,
+      "book_name": "Yönetim",
+      "chapter_id": 21,
+      "chapter_name": "Gizli",
+      "shelf_names": [
+        "Yönetim Shelf"
+      ],
+      "tags_str": "Yönetim",
+      "url": "http://wiki.example/link/21",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "SALARY-991 executive pay table is restricted to the board."
+    },
+    {
+      "page_id": 22,
+      "name": "Satın Alma Planı",
+      "book_id": 22,
+      "book_name": "Yönetim",
+      "chapter_id": 22,
+      "chapter_name": "Gizli",
+      "shelf_names": [
+        "Yönetim Shelf",
+        "Shared Shelf"
+      ],
+      "tags_str": "Yönetim",
+      "url": "http://wiki.example/link/22",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "MERGER-228 acquisition plan remains inside the board shelf."
+    },
+    {
+      "page_id": 23,
+      "name": "Mutfak Notu",
+      "book_id": 23,
+      "book_name": "Ofis",
+      "chapter_id": 23,
+      "chapter_name": "Genel",
+      "shelf_names": [
+        "Ofis Shelf"
+      ],
+      "tags_str": "Ofis",
+      "url": "http://wiki.example/link/23",
+      "updated_at": "2026-09-22T00:00:00Z",
+      "markdown": "Mutfak buzdolabı her cuma temizlenir. Yemek listesi bu sayfada yoktur."
+    }
+  ],
+  "questions": [
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        1
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "WireGuard kurulum adımları nelerdir?",
+      "id": "q01"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        6
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Güvenlik duvarında hangi portlar açıktır?",
+      "id": "q02"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        7
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Depo B yazıcı modeli nedir?",
+      "id": "q03"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        8
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Parola sıfırlama self-service portal ile mi yapılır?",
+      "id": "q04"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        9
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "SEV-1 nöbet telefonu nedir?",
+      "id": "q05"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        12
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Misafir kablosuz SSID değeri nedir?",
+      "id": "q06"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        17
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Oditoryum kapasitesi kaç kişidir?",
+      "id": "q07"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        19
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Veri sınıfları hangileridir?",
+      "id": "q08"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        15
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "Dizüstü talebi hangi formla açılır?",
+      "id": "q09"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        18
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "single_page",
+      "query": "WireGuard istemci paketi hangi yoldan indirilir?",
+      "id": "q10"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        10,
+        11
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "Selin Karaca e-posta adresi ve Atlas bütçe kodu nedir?",
+      "id": "q11"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        1,
+        18
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "WireGuard kurulum adımları ve istemci paketinin yolu nedir?",
+      "id": "q12"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        13,
+        14
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "Backup schedule retention and TLS certificate renewal owner?",
+      "id": "q13"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        9,
+        3
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "SEV-1 telefonu ve ERR-4412 iletişim adresi nedir?",
+      "id": "q14"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        7,
+        17
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "HP-M404 modeli ve Oditoryum kapasitesi nedir?",
+      "id": "q15"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        5,
+        15
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "Yıllık izin gün sayısı ve BT-12 formunu kim onaylar?",
+      "id": "q16"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        6,
+        12
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "port 8443 ve SSID Misafir nerede geçer?",
+      "id": "q17"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        14,
+        16
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "multi_page",
+      "query": "Platform team renewal and HTTP 429 retry-after kuralı nedir?",
+      "id": "q18"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        5
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": true,
+      "category": "cross_lingual",
+      "query": "annual leave entitlement kaç gündür?",
+      "id": "q19"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        4
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": true,
+      "category": "cross_lingual",
+      "query": "işe başlama yaka kartı hangi katta verilir?",
+      "id": "q20"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        13
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "cross_lingual",
+      "query": "backup retention kaç gündür?",
+      "id": "q21"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        8
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "cross_lingual",
+      "query": "password reset self-service portal kullanılıyor mu?",
+      "id": "q22"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        14
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "cross_lingual",
+      "query": "TLS certificate yenilemeyi hangi ekip yapar?",
+      "id": "q23"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        16
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "cross_lingual",
+      "query": "HTTP 429 alındığında retry-after ne anlama gelir?",
+      "id": "q24"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        4
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "cross_lingual",
+      "query": "Floor 3 badge which desk?",
+      "id": "q25"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        13
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "cross_lingual",
+      "query": "retention 30 days backup ne zaman başlar?",
+      "id": "q26"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        3
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "ERR-4412 hatasında kime yazılır?",
+      "id": "q27"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        3
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "Deniz Aksoy e-posta adresi nedir?",
+      "id": "q28"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        10
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "Selin Karaca hangi projenin sahibi?",
+      "id": "q29"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        11
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "ATL-19 kodu hangi projeye aittir?",
+      "id": "q30"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        15
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "BT-12 formunu hangi birim onaylar?",
+      "id": "q31"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        7
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "HP-M404 hangi depoda?",
+      "id": "q32"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        3
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "deniz@example.com hangi hata koduyla geçer?",
+      "id": "q33"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        10
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "proper_name",
+      "query": "selin@example.com kime aittir?",
+      "id": "q34"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "Cuma akşamı servis edilen balık menüsü nedir?",
+      "id": "q35"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "What is the cafeteria menu on Friday?",
+      "id": "q36"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "Mars üssündeki sunucu parolası nedir?",
+      "id": "q37"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "Who approves the lunar rover fuel contract?",
+      "id": "q38"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "QR-7788 hata kodu ne anlama gelir?",
+      "id": "q39"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "Zeynep Usta'nın dahili numarası kaç?",
+      "id": "q40"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "Hangi rafta penguen bakımı anlatılıyor?",
+      "id": "q41"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "unanswerable",
+      "query": "Where is the submarine dock procedure?",
+      "id": "q42"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_deny",
+      "query": "SALARY-991 tablosunda ne yazıyor?",
+      "id": "q43"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_deny",
+      "query": "MERGER-228 planının özeti nedir?",
+      "id": "q44"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_deny",
+      "query": "executive pay table kimlere açık?",
+      "id": "q45"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": true,
+      "conflict": false,
+      "expected_page_ids": [],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_deny",
+      "query": "acquisition plan board shelf içinde mi?",
+      "id": "q46"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        1
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_allow",
+      "query": "WireGuard kurulum adımları nelerdir?",
+      "id": "q47"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        10
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_allow",
+      "query": "Selin Karaca e-posta adresi nedir?",
+      "id": "q48"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        19
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_allow",
+      "query": "Veri sınıfları hangileridir?",
+      "id": "q49"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        17
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "acl_allow",
+      "query": "Oditoryum kapasitesi kaç kişidir?",
+      "id": "q50"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": true,
+      "expected_page_ids": [
+        1,
+        2
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "conflict",
+      "query": "VPN onaylayan birim hangisidir?",
+      "id": "q51"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": true,
+      "expected_page_ids": [
+        1,
+        2
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "conflict",
+      "query": "VPN erişimini onaylayan birim kim?",
+      "id": "q52"
+    },
+    {
+      "split": "calibration",
+      "simple": false,
+      "abstain": false,
+      "conflict": true,
+      "expected_page_ids": [
+        1,
+        2
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "conflict",
+      "query": "VPN onaylayan birim which approving unit?",
+      "id": "q53"
+    },
+    {
+      "split": "holdout",
+      "simple": false,
+      "abstain": false,
+      "conflict": true,
+      "expected_page_ids": [
+        1,
+        2
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": null,
+      "expect_extra_round": false,
+      "category": "conflict",
+      "query": "VPN onaylayan birim Bilgi Güvenliği mi İnsan Kaynakları mı?",
+      "id": "q54"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        20
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": 20,
+      "expect_extra_round": false,
+      "category": "page_summary",
+      "query": "Bu sayfadaki dağıtım kontrol listesini özetle",
+      "id": "q55"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        20
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": 20,
+      "expect_extra_round": false,
+      "category": "page_summary",
+      "query": "Summarize this page deployment checklist",
+      "id": "q56"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        20
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": 20,
+      "expect_extra_round": false,
+      "category": "page_summary",
+      "query": "Bu sayfada migrasyon adımı var mı?",
+      "id": "q57"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        20
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": 20,
+      "expect_extra_round": false,
+      "category": "page_summary",
+      "query": "Özetle bu sayfanın sağlık kontrolünü",
+      "id": "q58"
+    },
+    {
+      "split": "calibration",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        20
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": 20,
+      "expect_extra_round": false,
+      "category": "page_summary",
+      "query": "Bu makaledeki duyuru adımı nedir?",
+      "id": "q59"
+    },
+    {
+      "split": "holdout",
+      "simple": true,
+      "abstain": false,
+      "conflict": false,
+      "expected_page_ids": [
+        20
+      ],
+      "forbidden_page_ids": [
+        21,
+        22
+      ],
+      "forbidden_terms": [
+        "SALARY-991",
+        "MERGER-228"
+      ],
+      "current_page_id": 20,
+      "expect_extra_round": false,
+      "category": "page_summary",
+      "query": "Summarize the active page release steps",
+      "id": "q60"
+    }
+  ]
+}

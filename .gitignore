@@ -3,6 +3,8 @@
 
 # Docker Volumes (if local)
 chroma_data/
+chroma_db/
+rag_state.sqlite
 bookstack_db_data/
 bookstack_app_data/
 
@@ -17,6 +19,11 @@ build/
 .venv/
 venv/
 myenv/
+
+# Tests
+rag_service/tests/
+.pytest_cache/
+pytest-cache-files-*/
 
 # IDE
 .vscode/

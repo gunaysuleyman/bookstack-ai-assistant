@@ -33,6 +33,7 @@ services:
       - DB_DATABASE=${DB_NAME:-bookstackapp}
       - ALLOWED_SSR_HOSTS=rag_service,localhost,127.0.0.1
       - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - RAG_INTERNAL_URL=http://rag_service:8000
       - RAG_SERVICE_PUBLIC_URL=${RAG_SERVICE_PUBLIC_URL:-http://localhost:8000/api/ai-search}
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     ports:
@@ -59,17 +60,25 @@ services:
       - BOOKSTACK_TOKEN_ID=${BOOKSTACK_TOKEN_ID}
       - BOOKSTACK_TOKEN_SECRET=${BOOKSTACK_TOKEN_SECRET}
       - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - TOKEN_TTL_SECONDS=${TOKEN_TTL_SECONDS:-900}
+      - ADAPTIVE_RAG=${ADAPTIVE_RAG:-0}
+      - ADAPTIVE_INDEXING=${ADAPTIVE_INDEXING:-0}
+      - ENABLE_INDEX_WORKER=${ENABLE_INDEX_WORKER:-1}
+      - RAG_STATE_DIR=/app/chroma_db
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
       - GEMINI_VISION_MODEL=${GEMINI_VISION_MODEL:-gemini-3.8-flash}
       - GEMINI_FALLBACK_MODELS=${GEMINI_FALLBACK_MODELS:-gemini-flash-latest,gemini-3.6-flash}
+      - EMBEDDING_MODEL_ID=${EMBEDDING_MODEL_ID:-gemini-embedding-001}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       - CHROMA_PERSIST_DIR=/app/chroma_db
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     volumes:
       - ./rag_service:/app
+      - ./widget:/widget:ro
       - chroma_data:/app/chroma_db
     restart: unless-stopped
     depends_on:

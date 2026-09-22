@@ -5,9 +5,13 @@ import base64
 import logging
 import httpx
 from bs4 import BeautifulSoup
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional, Tuple
+from urllib.parse import urljoin, urlparse
+
+from adaptive.provider import redact_secrets
 
 logger = logging.getLogger("ImageProcessor")
+IMAGE_PROMPT_VERSION = os.getenv("IMAGE_PROMPT_VERSION", "v1")
 
 class ImageProcessor:
     def __init__(self, db_dir: Optional[str] = None):
@@ -43,6 +47,15 @@ class ImageProcessor:
                 """)
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_page_images_page_id ON page_images(page_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_page_images_hash ON page_images(image_hash);")
+                existing = {row[1] for row in cursor.execute("PRAGMA table_info(page_images)")}
+                for name, decl in (
+                    ("vision_model", "TEXT"),
+                    ("prompt_version", "TEXT"),
+                    ("etag", "TEXT"),
+                    ("last_modified", "TEXT"),
+                ):
+                    if name not in existing:
+                        cursor.execute(f"ALTER TABLE page_images ADD COLUMN {name} {decl}")
                 conn.commit()
             logger.info(f"Image descriptions SQLite database initialized at {self.db_path}")
         except Exception as e:
@@ -132,10 +145,10 @@ class ImageProcessor:
 
         last_err = None
         for model_name in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
             try:
                 with httpx.Client(timeout=60.0) as client:
-                    res = client.post(url, json=payload)
+                    res = client.post(url, headers={"x-goog-api-key": self.gemini_key}, json=payload)
                     res.raise_for_status()
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -143,16 +156,96 @@ class ImageProcessor:
                         parts = candidates[0]["content"].get("parts", [])
                         if parts and "text" in parts[0]:
                             return parts[0]["text"].strip()
-            except Exception as e:
-                logger.warning(f"Vision analysis with model {model_name} failed: {e}")
-                last_err = e
+            except Exception as exc:
+                logger.warning(
+                    "Vision analysis with model %s failed: %s",
+                    model_name,
+                    redact_secrets(str(exc), [self.gemini_key]),
+                )
+                last_err = exc
 
-        logger.error(f"All Gemini Vision models failed. Last error: {last_err}")
+        logger.error("All Gemini Vision models failed: %s", redact_secrets(str(last_err), [self.gemini_key]))
         return ""
 
-    def process_page_images(self, page_id: int, html_content: str, auth_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    def _bookstack_hosts(self) -> set:
+        hosts = set()
+        for base in (self.bookstack_internal_url, self.bookstack_external_url):
+            host = urlparse(base).hostname
+            if host:
+                hosts.add(host.lower())
+        return hosts
+
+    def is_bookstack_url(self, url: str) -> bool:
+        if not url:
+            return False
+        if url.startswith("/"):
+            return True
+        host = urlparse(url).hostname
+        return bool(host and host.lower() in self._bookstack_hosts())
+
+    def fetch_image_bytes(
+        self,
+        url: str,
+        auth_headers: Optional[Dict[str, str]] = None,
+        transport: Optional[httpx.BaseTransport] = None,
+    ) -> Optional[Tuple[bytes, str, str]]:
+        """Download an image without sending BookStack credentials off-host."""
+        max_bytes = int(os.getenv("IMAGE_MAX_BYTES", "5000000"))
+        timeout = float(os.getenv("IMAGE_TIMEOUT_SECONDS", "15"))
+        allow_external = os.getenv("IMAGE_ALLOW_EXTERNAL", "0").strip().lower() in {"1", "true", "yes", "on"}
+        current = url
+        with httpx.Client(timeout=timeout, transport=transport, follow_redirects=False) as client:
+            for _hop in range(3):
+                if not self.is_bookstack_url(current) and not allow_external:
+                    logger.info("Skipping non-BookStack image host: %s", urlparse(current).hostname)
+                    return None
+                request_url = self.get_internal_url(current) if self.is_bookstack_url(current) else current
+                headers = {}
+                if self.is_bookstack_url(current) and auth_headers:
+                    headers["Authorization"] = auth_headers.get("Authorization", "")
+                response = client.get(request_url, headers=headers)
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current = urljoin(request_url, location)
+                    continue
+                if response.status_code != 200:
+                    logger.warning("Failed to download image %s: HTTP %s", request_url, response.status_code)
+                    return None
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > max_bytes:
+                    logger.warning("Image %s exceeds size limit", request_url)
+                    return None
+                payload = response.content
+                if len(payload) > max_bytes:
+                    logger.warning("Image %s exceeds size limit", request_url)
+                    return None
+                return payload, response.headers.get("etag", ""), response.headers.get("last-modified", "")
+        return None
+
+    def _save_image_cache(self, src: str, page_id: int, img_hash: str, alt: str, desc: str, etag: str, last_modified: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO page_images (
+                    image_url, page_id, image_hash, alt_text, visual_description,
+                    vision_model, prompt_version, etag, last_modified, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (src, page_id, img_hash, alt, desc, self.vision_model, os.getenv("IMAGE_PROMPT_VERSION", IMAGE_PROMPT_VERSION), etag, last_modified),
+            )
+            conn.commit()
+
+    def process_page_images(
+        self,
+        page_id: int,
+        html_content: str,
+        auth_headers: Optional[Dict[str, str]] = None,
+        transport: Optional[httpx.BaseTransport] = None,
+    ) -> Dict[str, str]:
         """
-        Parses all images in page HTML, checks cache, downloads and analyzes new images using Gemini 2.5 Flash.
+        Parses page images, revalidates bytes, and analyzes changed images.
         Returns a dictionary mapping original image src -> visual_description.
         """
         if not html_content:
@@ -164,65 +257,36 @@ class ImageProcessor:
             return {}
 
         image_descriptions: Dict[str, str] = {}
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            for img in img_tags:
-                src = img.get("src", "").strip()
-                alt = img.get("alt", "").strip() or img.get("title", "").strip()
-                if not src:
+        for img in img_tags:
+            src = img.get("src", "").strip()
+            alt = img.get("alt", "").strip() or img.get("title", "").strip()
+            if not src:
+                continue
+            try:
+                fetched = self.fetch_image_bytes(src, auth_headers=auth_headers, transport=transport)
+                if not fetched:
                     continue
-
-                # Check if already cached by image_url
-                cursor.execute("SELECT visual_description, image_hash FROM page_images WHERE image_url = ?", (src,))
-                row = cursor.fetchone()
-                if row and row[0]:
-                    image_descriptions[src] = row[0]
+                img_bytes, etag, last_modified = fetched
+                img_hash = hashlib.sha256(img_bytes).hexdigest()
+                prompt_version = os.getenv("IMAGE_PROMPT_VERSION", IMAGE_PROMPT_VERSION)
+                with self._get_connection() as conn:
+                    cached = conn.execute(
+                        """
+                        SELECT visual_description FROM page_images
+                        WHERE image_hash = ? AND vision_model = ? AND prompt_version = ?
+                          AND visual_description IS NOT NULL AND visual_description != ''
+                        """,
+                        (img_hash, self.vision_model, prompt_version),
+                    ).fetchone()
+                if cached and cached[0]:
+                    self._save_image_cache(src, page_id, img_hash, alt, cached[0], etag, last_modified)
+                    image_descriptions[src] = cached[0]
                     continue
-
-                # Download image from BookStack
-                internal_url = self.get_internal_url(src)
-                logger.info(f"Downloading image for Page {page_id}: {internal_url}")
-                try:
-                    headers = auth_headers or {}
-                    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-                        img_res = client.get(internal_url, headers=headers)
-                        if img_res.status_code != 200:
-                            logger.warning(f"Failed to download image {internal_url}: HTTP {img_res.status_code}")
-                            continue
-                        img_bytes = img_res.content
-
-                    # Check by content SHA-256 hash (deduplication)
-                    img_hash = hashlib.sha256(img_bytes).hexdigest()
-                    cursor.execute("SELECT visual_description FROM page_images WHERE image_hash = ?", (img_hash,))
-                    hash_row = cursor.fetchone()
-                    if hash_row and hash_row[0]:
-                        logger.info(f"Image {src} matched existing hash {img_hash}. Reusing cached description (0 API cost).")
-                        desc = hash_row[0]
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO page_images (image_url, page_id, image_hash, alt_text, visual_description, updated_at)
-                            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                        """, (src, page_id, img_hash, alt, desc))
-                        conn.commit()
-                        image_descriptions[src] = desc
-                        continue
-
-                    # Analyze with Gemini 2.5 Flash
-                    mime_type = self._detect_mime_type(img_bytes, src)
-                    logger.info(f"Analyzing new image with Gemini 2.5 Flash: {src} ({mime_type}, {len(img_bytes)} bytes)")
-                    desc = self.analyze_image_with_gemini(img_bytes, mime_type, alt_text=alt)
-
-                    if desc:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO page_images (image_url, page_id, image_hash, alt_text, visual_description, updated_at)
-                            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                        """, (src, page_id, img_hash, alt, desc))
-                        conn.commit()
-                        image_descriptions[src] = desc
-                        logger.info(f"Successfully cached vision analysis for {src}")
-
-                except Exception as e:
-                    logger.error(f"Error processing image {src} for page {page_id}: {e}")
-
+                mime_type = self._detect_mime_type(img_bytes, src)
+                desc = self.analyze_image_with_gemini(img_bytes, mime_type, alt_text=alt)
+                if desc:
+                    self._save_image_cache(src, page_id, img_hash, alt, desc, etag, last_modified)
+                    image_descriptions[src] = desc
+            except Exception as exc:
+                logger.error("Error processing image %s for page %s: %s", src, page_id, exc)
         return image_descriptions

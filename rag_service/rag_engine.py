@@ -1,16 +1,18 @@
 import os
+import json
 import logging
 import chromadb
-from chromadb.utils import embedding_functions
+from chromadb.config import Settings as ChromaSettings
 from typing import List, Dict, Any, Optional
-import httpx
-import json
+
+from adaptive.embeddings import build_embedding
+from adaptive.provider import complete_llm
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RAGEngine")
 
 class RAGEngine:
-    def __init__(self):
+    def __init__(self, embedding_fn=None, collection_name: Optional[str] = None):
         self.provider = os.getenv("AI_PROVIDER", "gemini").lower()
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
@@ -19,28 +21,41 @@ class RAGEngine:
         self.gemini_fallbacks = [m.strip() for m in fallback_str.split(",") if m.strip()]
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.chroma_dir = os.getenv("CHROMA_PERSIST_DIR", "/app/chroma_db")
+        self.metadata_scans = 0
+        self.last_usage = None
 
-        self.embedding_fn = embedding_functions.DefaultEmbeddingFunction()
+        self.embedding_fn = embedding_fn or build_embedding()
 
-        self.chroma_client = chromadb.PersistentClient(path=self.chroma_dir)
-        self.collection_name = "bookstack_articles"
+        self.chroma_client = chromadb.PersistentClient(
+            path=self.chroma_dir,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+        self.collection_name = collection_name or os.getenv("LEGACY_COLLECTION", "bookstack_articles")
         self.collection = self._get_or_create_collection()
 
     def _get_or_create_collection(self):
+        model_id = "custom"
+        name = getattr(self.embedding_fn, "name", None)
+        if callable(name):
+            try:
+                model_id = str(name())
+            except TypeError:
+                model_id = str(name)
+        metadata = {"hnsw:space": "cosine", "embedding_model": model_id}
         try:
-            return self.chroma_client.get_or_create_collection(
-                name=self.collection_name,
-                embedding_function=self.embedding_fn,
-                metadata={"hnsw:space": "cosine"}
-            )
-        except Exception as e:
-            logger.error(f"Error initializing Chroma collection: {e}")
-            return self.chroma_client.create_collection(
-                name=self.collection_name,
-                embedding_function=self.embedding_fn
-            )
+            existing = self.chroma_client.get_collection(name=self.collection_name)
+        except Exception:
+            existing = None
+        if existing is not None and (existing.metadata or {}).get("embedding_model") != model_id:
+            self.chroma_client.delete_collection(self.collection_name)
+        return self.chroma_client.get_or_create_collection(
+            name=self.collection_name,
+            embedding_function=self.embedding_fn,
+            metadata=metadata,
+        )
 
     def _get_indexed_catalog(self, allowed_page_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+        self.metadata_scans += 1
         try:
             all_meta = self.collection.get(include=["metadatas"])
             tree_map = {}
@@ -102,43 +117,22 @@ class RAGEngine:
             return {"summary": "", "pages": {}}
 
     def _call_llm_api(self, system_instruction: str, user_prompt: str) -> str:
-        full_prompt = f"{system_instruction}\n\n{user_prompt}"
-
-        if self.provider == "gemini":
-            models_to_try = [self.gemini_model] + [m for m in self.gemini_fallbacks if m != self.gemini_model]
-            last_err = None
-            for model_name in models_to_try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_key}"
-                payload = {
-                    "contents": [{"parts": [{"text": full_prompt}]}]
-                }
-                try:
-                    with httpx.Client(timeout=60.0) as client:
-                        res = client.post(url, json=payload)
-                        res.raise_for_status()
-                        data = res.json()
-                        return data["candidates"][0]["content"]["parts"][0]["text"]
-                except Exception as e:
-                    logger.warning(f"Failed with model {model_name}: {e}")
-                    last_err = e
-            
-            raise RuntimeError(f"All Gemini models failed. Last error: {last_err}")
-
-        elif self.provider == "openai":
-            headers = {"Authorization": f"Bearer {self.openai_key}"}
-            payload = {
-                "model": self.openai_model,
-                "messages": [
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": user_prompt}
-                ]
-            }
-            with httpx.Client(timeout=60.0) as client:
-                res = client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-                res.raise_for_status()
-                return res.json()["choices"][0]["message"]["content"]
-        else:
+        if self.provider not in {"gemini", "openai"}:
             raise ValueError(f"Unsupported AI_PROVIDER: {self.provider}")
+        result = complete_llm(
+            provider=self.provider,
+            model=self.gemini_model,
+            fallbacks=self.gemini_fallbacks,
+            api_key=self.gemini_key,
+            openai_model=self.openai_model,
+            openai_key=self.openai_key,
+            system_instruction=system_instruction,
+            user_prompt=user_prompt,
+            purpose="legacy",
+            timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+        )
+        self.last_usage = result.usage
+        return result.text
 
     def classify_and_route_intent(self, query: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
@@ -255,13 +249,77 @@ class RAGEngine:
             if results and results.get("ids"):
                 self.collection.delete(ids=results["ids"])
                 logger.info(f"Deleted {len(results['ids'])} existing chunks for page ID {page_id}")
-        except Exception as e:
-            logger.warning(f"Failed to delete chunks for page ID {page_id}: {e}")
+        except Exception as exc:
+            logger.warning("Failed to delete chunks for page ID %s: %s", page_id, exc)
+            raise
+
+    def update_book_metadata(self, book_id: int, book_name: str, shelf_name: str) -> int:
+        """Update hierarchy labels without embedding the page again."""
+        found = self.collection.get(where={"book_id": int(book_id)}, include=["metadatas"])
+        ids = found.get("ids") or []
+        metas = found.get("metadatas") or []
+        if not ids:
+            return 0
+        updated = []
+        for meta in metas:
+            copied = dict(meta)
+            copied["book_name"] = book_name
+            copied["shelf_name"] = shelf_name
+            updated.append(copied)
+        self.collection.update(ids=ids, metadatas=updated)
+        return len(ids)
+
+    def _flatten_query(self, result: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not result:
+            return []
+        docs = (result.get("documents") or [[]])[0]
+        metas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
+        rows = []
+        for doc, meta, dist in zip(docs, metas, distances):
+            rows.append({"document": doc, "metadata": meta or {}, "distance": dist})
+        return rows
+
+    def _query_permitted(self, search_query: str, allowed_page_ids: Optional[List[int]], limit: int) -> List[Dict[str, Any]]:
+        include = ["documents", "metadatas", "distances"]
+        if allowed_page_ids is not None and len(allowed_page_ids) == 0:
+            return []
+        if allowed_page_ids is None:
+            return self._flatten_query(
+                self.collection.query(query_texts=[search_query], n_results=limit, include=include)
+            )
+        batch_size = int(os.getenv("ACL_FILTER_BATCH", "200"))
+        rows: List[Dict[str, Any]] = []
+        allowed = set(allowed_page_ids)
+        for start in range(0, len(allowed_page_ids), batch_size):
+            batch = allowed_page_ids[start : start + batch_size]
+            try:
+                result = self.collection.query(
+                    query_texts=[search_query],
+                    n_results=limit,
+                    where={"page_id": {"$in": batch}},
+                    include=include,
+                )
+            except Exception as exc:
+                logger.warning("Filtered vector query failed: %s", exc)
+                continue
+            rows.extend(self._flatten_query(result))
+        rows.sort(key=lambda item: item["distance"] if item["distance"] is not None else 999)
+        filtered = []
+        for row in rows:
+            page_id = row["metadata"].get("page_id")
+            if page_id not in allowed:
+                continue
+            filtered.append(row)
+            if len(filtered) >= limit:
+                break
+        return filtered
 
     def search_and_answer(self, query: str, top_k: int = 6, current_page: Optional[Dict[str, Any]] = None, allowed_page_ids: Optional[List[int]] = None, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
         2-LAYER AI RAG PIPELINE WITH PERMISSION FILTERING, PAGE AWARENESS & ACCURATE CITATIONS
         """
+        self.last_usage = None
         # --- LAYER 1: INTENT ROUTER ---
         router_result = self.classify_and_route_intent(query, history=history)
         intent = router_result.get("intent", "SEARCH")
@@ -280,123 +338,86 @@ class RAGEngine:
                 search_query = f"{current_page_title} {search_query}"
 
         logger.info(f"Intent Router Result -> Intent: {intent}, Search Query: '{search_query}', Allowed Pages: {len(allowed_page_ids) if allowed_page_ids is not None else 'All'}")
+        del top_k  # Client top_k is accepted by the API and does not set retrieval depth.
 
-        catalog_info = self._get_indexed_catalog(allowed_page_ids=allowed_page_ids)
-        catalog_summary = catalog_info.get("summary", "")
-        all_pages = catalog_info.get("pages", {})
-
-        # ROUTE 1: GREETING INTENT
         if intent == "GREETING":
-            answer = self.generate_llm_response(query, f"DOCUMENT CATALOG:\n{catalog_summary}\nUser greeted you. Welcome them warmly.", history=history)
-            return {
-                "answer": answer,
-                "sources": []
-            }
+            try:
+                answer = self.generate_llm_response(
+                    query,
+                    "The user greeted you. Reply briefly in their language. Do not list or invent documents.",
+                    history=history,
+                )
+            except Exception:
+                answer = "Merhaba. Belgelerinizde arama yapabilirim." if any(ch in query.lower() for ch in "çğıöşü") or "merhaba" in query.lower() else "Hello. I can search the documents you can access."
+            return {"answer": answer, "sources": []}
 
-        # ROUTE 2: OVERVIEW INTENT
         if intent == "OVERVIEW":
-            context_str = f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}"
-            answer = self.generate_llm_response(query, context_str, history=history)
-            sources = [{"page_id": pid, "title": info["title"], "url": info["url"]} for pid, info in all_pages.items()]
-            return {
-                "answer": answer,
-                "sources": sources
-            }
+            catalog_info = self._get_indexed_catalog(allowed_page_ids=allowed_page_ids)
+            catalog_summary = catalog_info.get("summary", "")
+            all_pages = catalog_info.get("pages", {})
+            answer = self.generate_llm_response(query, catalog_summary, history=history)
+            sources = [
+                {"page_id": pid, "title": info["title"], "url": info["url"]}
+                for pid, info in all_pages.items()
+                if allowed_page_ids is None or pid in allowed_page_ids
+            ]
+            return {"answer": answer, "sources": sources}
 
-        # ROUTE 3: SEARCH INTENT
-        results = self.collection.query(
-            query_texts=[search_query],
-            n_results=top_k * 2 if allowed_page_ids is not None else top_k,
-            include=["documents", "metadatas", "distances"]
-        )
-
-        documents = results["documents"][0] if (results and results.get("documents")) else []
-        metadatas = results["metadatas"][0] if (results and results.get("metadatas")) else []
-        distances = results["distances"][0] if (results and results.get("distances")) else []
-
+        server_limit = int(os.getenv("LEGACY_RESULT_LIMIT", "8"))
+        rows = self._query_permitted(search_query, allowed_page_ids, server_limit)
         search_parts = []
         primary_sources_map = {}
-
-        for doc, meta, dist in zip(documents, metadatas, distances):
+        for row in rows:
+            meta = row["metadata"]
             page_id = meta.get("page_id")
-            # Permission check: skip if page is not permitted
-            if allowed_page_ids is not None and (page_id is None or page_id not in allowed_page_ids):
+            if allowed_page_ids is not None and page_id not in allowed_page_ids:
                 continue
-
-            search_parts.append(f"{doc}")
-            if page_id and page_id not in primary_sources_map and dist <= 0.85:
+            search_parts.append(row["document"])
+            distance = row["distance"] if row["distance"] is not None else 1
+            if page_id and page_id not in primary_sources_map and distance <= 0.85:
                 primary_sources_map[page_id] = {
                     "page_id": page_id,
                     "title": meta.get("name"),
-                    "url": meta.get("url")
+                    "url": meta.get("url"),
                 }
 
-        # Handle Active Page Context (always inject if user is currently reading an authorized page)
-        q_lower = query.lower()
-        is_page_summary_request = any(w in q_lower for w in ["bu sayfa", "this page", "bu makale", "this article", "özetle", "summarize", "buradaki", "bu doküman", "burada"])
-        
         current_page_context = ""
         current_page_id = current_page.get("page_id") if current_page else None
         current_page_title = current_page.get("title") if current_page else None
         current_page_url = current_page.get("url") if current_page else None
         active_page_loaded = False
-
         if current_page_id:
             page_permitted = (allowed_page_ids is None) or (int(current_page_id) in allowed_page_ids)
             if page_permitted:
                 try:
-                    active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents"])
+                    active_meta = self.collection.get(where={"page_id": int(current_page_id)}, include=["documents", "metadatas"])
                     if active_meta and active_meta.get("documents"):
-                        page_docs = active_meta["documents"]
                         current_page_context = (
                             f"=== CURRENT ACTIVE PAGE (User is currently reading this article in BookStack) ===\n"
                             f"Page Title: '{current_page_title}'\n"
                             f"Page ID: {current_page_id}\n"
                             f"URL: {current_page_url}\n\n"
-                            + "\n\n".join(page_docs)
+                            + "\n\n".join(active_meta["documents"])
                         )
                         active_page_loaded = True
-                except Exception as e:
-                    logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {e}")
+                except Exception as exc:
+                    logger.warning(f"Could not fetch active page chunks for ID {current_page_id}: {exc}")
             else:
                 logger.warning(f"Active page ID {current_page_id} is not in user's permitted pages. Skipping context injection.")
 
         context_parts = []
         if current_page_context:
             context_parts.append(current_page_context)
+        context_parts.append(
+            "=== SEARCH RESULTS (permitted articles) ===\n"
+            + ("\n\n".join(search_parts) if search_parts else "No matching permitted documents found.")
+        )
+        answer = self.generate_llm_response(query, "\n\n".join(context_parts), history=history)
 
-        context_parts.append(f"=== SEARCH RESULTS ACROSS ALL PERMITTED ARTICLES (Matches for user query) ===\n" + ("\n\n".join(search_parts) if search_parts else "No matching permitted documents found."))
-        context_parts.append(f"=== FULL BOOKSTACK LIBRARY & HIERARCHY CATALOG ===\n{catalog_summary}")
-
-        context_str = "\n\n".join(context_parts)
-
-        answer = self.generate_llm_response(query, context_str, history=history)
-
-        # Smart Hybrid Citation Management
-        answer_lower = answer.lower()
-        
-        # If active page was loaded: check if the answer references it or if question was specifically about it
-        if active_page_loaded and current_page_id:
-            act_title_words = [w for w in (current_page_title or "").lower().split() if len(w) > 3]
-            is_active_page_referenced = (
-                is_page_summary_request
-                or (current_page_title and current_page_title.lower() in answer_lower)
-                or any(w in answer_lower for w in act_title_words)
-                or any(w in q_lower for w in ["buradaki", "bu sayfa", "bu makale", "bu adım", "here", "this page", "bu doküman", "özet"])
-            )
-            if is_active_page_referenced:
-                active_entry = all_pages.get(int(current_page_id), {
-                    "page_id": int(current_page_id),
-                    "title": current_page_title or f"Page #{current_page_id}",
-                    "url": current_page_url or f"/link/{current_page_id}"
-                })
-                primary_sources_map[int(current_page_id)] = {
-                    "page_id": int(current_page_id),
-                    "title": active_entry.get("title", current_page_title),
-                    "url": active_entry.get("url", current_page_url)
-                }
-
-        return {
-            "answer": answer,
-            "sources": list(primary_sources_map.values())
-        }
+        if active_page_loaded and current_page_id and is_page_request:
+            primary_sources_map[int(current_page_id)] = {
+                "page_id": int(current_page_id),
+                "title": current_page_title or f"Page #{current_page_id}",
+                "url": current_page_url or f"/link/{current_page_id}",
+            }
+        return {"answer": answer, "sources": list(primary_sources_map.values())}

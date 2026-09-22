@@ -11,9 +11,9 @@ A self-hosted, enterprise-grade AI-powered documentation assistant for [BookStac
 - 🔄 **Multi-Turn Conversation Memory** — Remembers previous turns in the session, accurately resolving pronouns and follow-up inquiries (e.g., *"What is their email address?"*, *"How long does this take?"*).
 - ⏱️ **Context Window Guard & New Chat Reset** — Monitors session turns and token usage. Proactively alerts when conversations get long (`⚠️ Conversation Length Notice`) and provides a 1-click `[🔄 New Chat]` button to reset the session cleanly.
 - 🛡️ **Role-Based Access Control (RBAC)** — Feature gating via `AI_ALLOWED_ROLES` (e.g. `admin,internal`). Disable access for external or guest users with zero code changes.
-- 🔐 **Cryptographic Security (HMAC-SHA256)** — Session tokens are signed server-side in BookStack and cryptographically verified by the RAG service, enforcing strict page visibility boundaries.
+- 🔐 **Cryptographic Security (HMAC-SHA256)** — BookStack signs the permission payload on the server. The shared secret stays on the BookStack and RAG servers; the browser receives either a short-lived scope reference or the signed payload, not the secret.
 - 🌐 **Two-Layer Bilingual Intent Router** — Translates and expands user queries (e.g., Turkish to English documentation keywords) for high-accuracy vector retrieval and cites relevant articles with clickable chips.
-- ⚡ **Real-Time Webhook Synchronization** — Automatic incremental indexing on page creation, updates, and deletion.
+- ⚡ **Webhook Synchronization** — Page create/update/delete events are queued after a service-channel secret check. BookStack does not sign webhook bodies; put `WEBHOOK_SECRET` on the webhook URL as `?token=`. Startup does not run a full sync.
 
 ---
 
@@ -116,7 +116,10 @@ Or configure a BookStack webhook for automatic real-time sync:
 | `AI_PROVIDER` | AI backend provider (`gemini` or `openai`) | `gemini` |
 | `BOOKSTACK_TOKEN_ID` | BookStack API token ID | _(required for sync)_ |
 | `BOOKSTACK_TOKEN_SECRET` | BookStack API token secret | _(required for sync)_ |
-| `RAG_SECRET_TOKEN` | Shared secret for widget & webhook authentication | `my_super_secret_local_token_123` |
+| `RAG_SECRET_TOKEN` | Server-side HMAC and admin API secret. Not sent by the browser. | `my_super_secret_local_token_123` |
+| `WEBHOOK_SECRET` | Query/header secret for BookStack webhooks | _(required)_ |
+| `TOKEN_TTL_SECONDS` | Maximum age of a signed permission snapshot | `900` |
+| `ADAPTIVE_RAG` | `off`, `shadow`, or `on` | `off` |
 | `AI_ALLOWED_ROLES` | Comma-separated BookStack roles permitted to use AI | `admin,internal` |
 | `MAX_RECOMMENDED_TURNS` | Number of chat turns before suggesting new chat | `5` |
 | `BOOKSTACK_EXTERNAL_URL` | Public-facing BookStack URL | `http://localhost:6875` |
@@ -126,7 +129,7 @@ Or configure a BookStack webhook for automatic real-time sync:
 ## How It Works
 
 1. **Custom Theme Override**: The widget Blade view (`widget/bookstack_ai_widget.html`) is mounted to `/config/www/themes/custom/layouts/parts/base-body-end.blade.php`.
-2. **Access Control & HMAC**: BookStack verifies the user's role against `AI_ALLOWED_ROLES`. If authorized, it generates an HMAC-signed payload containing the user ID, role list, and allowed page IDs.
+2. **Access Control & HMAC**: BookStack verifies the user's role against `AI_ALLOWED_ROLES`. If authorized, it signs the permission payload on the server. The browser sends that signature or a short-lived scope reference; it does not receive the HMAC key.
 3. **Active Page Detection**: When browsing a specific page, BookStack injects the page ID and title, allowing the AI to prioritize or summarize active content.
 4. **Multi-Turn Context & Guard**: Conversation history is maintained on the client and sent with each request. If session turns exceed `MAX_RECOMMENDED_TURNS`, the user receives a notice recommending `🔄 Start New Chat`.
 5. **Vector Search & Grounding**: Queries are routed through ChromaDB, filtered strictly by authorized pages, and synthesized with citation chips pointing directly to original articles.
