@@ -21,9 +21,9 @@ venv/
 myenv/
 
 # Tests
-rag_service/tests/
 .pytest_cache/
 pytest-cache-files-*/
+tests/
 
 # IDE
 .vscode/

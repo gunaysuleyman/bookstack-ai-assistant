@@ -90,7 +90,7 @@ def load_settings() -> Settings:
         candidate_step=int(os.getenv("CANDIDATE_STEP", "12")),
         max_candidates=int(os.getenv("MAX_CANDIDATES", "40")),
         acl_batch=int(os.getenv("ACL_FILTER_BATCH", "200")),
-        max_model_calls=int(os.getenv("MAX_MODEL_CALLS", "3")),
+        max_model_calls=int(os.getenv("MAX_MODEL_CALLS", "4")),
         request_deadline_s=float(os.getenv("REQUEST_DEADLINE_SECONDS", "25")),
         legacy_result_limit=int(os.getenv("LEGACY_RESULT_LIMIT", "8")),
         planner_enabled=_flag("PLANNER_ENABLED", "0"),

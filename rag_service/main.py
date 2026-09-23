@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import logging
 import os
 import time
@@ -315,6 +316,7 @@ def _log_assistant_turn(scope: AuthorizationScope, query: str, result: dict, usa
     if summary["provider"] == "openai":
         effort = rag_engine.openai_reasoning
     try:
+        evidence = (result or {}).get("evidence_trace")
         state_store.log_assistant_turn(
             user_id=str(scope.principal),
             query=query,
@@ -327,6 +329,7 @@ def _log_assistant_turn(scope: AuthorizationScope, query: str, result: dict, usa
             input_usd_per_mtok=summary["input_usd_per_mtok"],
             output_usd_per_mtok=summary["output_usd_per_mtok"],
             cost_usd=summary["cost_usd"],
+            evidence_json=json.dumps(evidence, ensure_ascii=False) if evidence else "",
         )
     except Exception:
         logger.warning("Assistant turn log failed")

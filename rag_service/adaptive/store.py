@@ -209,10 +209,14 @@ class StateStore:
                 output_tokens INTEGER,
                 input_usd_per_mtok REAL,
                 output_usd_per_mtok REAL,
-                cost_usd REAL
+                cost_usd REAL,
+                evidence_json TEXT
             );
             """
         )
+        columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(assistant_turns)").fetchall()}
+        if "evidence_json" not in columns:
+            self.conn.execute("ALTER TABLE assistant_turns ADD COLUMN evidence_json TEXT")
         self.conn.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
@@ -890,13 +894,15 @@ class StateStore:
         input_usd_per_mtok: Optional[float],
         output_usd_per_mtok: Optional[float],
         cost_usd: Optional[float],
+        evidence_json: str = "",
     ) -> None:
         self.conn.execute(
             """
             INSERT INTO assistant_turns(
                 created_at, user_id, query, answer, provider, model, reasoning_effort,
-                input_tokens, output_tokens, input_usd_per_mtok, output_usd_per_mtok, cost_usd
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                input_tokens, output_tokens, input_usd_per_mtok, output_usd_per_mtok, cost_usd,
+                evidence_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 time.time(),
@@ -911,6 +917,7 @@ class StateStore:
                 input_usd_per_mtok,
                 output_usd_per_mtok,
                 cost_usd,
+                evidence_json,
             ),
         )
 
