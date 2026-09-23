@@ -175,6 +175,14 @@ class ImageProcessor:
                 hosts.add(host.lower())
         return hosts
 
+    def trusted_image_hosts(self) -> set:
+        raw = os.getenv("IMAGE_TRUSTED_HOSTS", "")
+        return {host.strip().lower() for host in raw.split(",") if host.strip()}
+
+    def is_trusted_image_url(self, url: str) -> bool:
+        host = urlparse(url).hostname if url else None
+        return bool(host and host.lower() in self.trusted_image_hosts())
+
     def is_bookstack_url(self, url: str) -> bool:
         if not url:
             return False
@@ -196,12 +204,14 @@ class ImageProcessor:
         current = url
         with httpx.Client(timeout=timeout, transport=transport, follow_redirects=False) as client:
             for _hop in range(3):
-                if not self.is_bookstack_url(current) and not allow_external:
+                bookstack = self.is_bookstack_url(current)
+                trusted = self.is_trusted_image_url(current)
+                if not bookstack and not trusted and not allow_external:
                     logger.info("Skipping non-BookStack image host: %s", urlparse(current).hostname)
                     return None
-                request_url = self.get_internal_url(current) if self.is_bookstack_url(current) else current
+                request_url = self.get_internal_url(current) if bookstack else current
                 headers = {}
-                if self.is_bookstack_url(current) and auth_headers:
+                if bookstack and auth_headers:
                     headers["Authorization"] = auth_headers.get("Authorization", "")
                 response = client.get(request_url, headers=headers)
                 if response.status_code in {301, 302, 303, 307, 308}:

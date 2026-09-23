@@ -37,7 +37,7 @@
       'ts' => time()
   ];
   $tokenPayloadJson = json_encode($tokenPayloadData);
-  $ragSecret = env('RAG_SECRET_TOKEN', 'my_super_secret_local_token_123');
+  $ragSecret = env('RAG_SECRET_TOKEN', '');
   $ragPublicUrl = env('RAG_SERVICE_PUBLIC_URL', 'http://localhost:8000/api/ai-search');
   $ragInternalUrl = rtrim(env('RAG_INTERNAL_URL', 'http://rag_service:8000'), '/');
   $tokenSignature = hash_hmac('sha256', $tokenPayloadJson, $ragSecret);
@@ -328,6 +328,57 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
   }
 
+  .ai-msg-assistant h1,
+  .ai-msg-assistant h2,
+  .ai-msg-assistant h3,
+  .ai-msg-assistant h4 {
+    margin: 0.6em 0 0.3em;
+    line-height: 1.3;
+  }
+
+  .ai-msg-assistant p {
+    margin: 0.4em 0;
+  }
+
+  .ai-msg-assistant ul {
+    margin: 0.4em 0;
+    padding-left: 1.2em;
+  }
+
+  .ai-msg-assistant blockquote {
+    margin: 0.4em 0;
+    padding-left: 0.7em;
+    border-left: 3px solid #cbd5e1;
+    color: #334155;
+  }
+
+  .ai-msg-assistant pre {
+    margin: 0.4em 0;
+    padding: 8px;
+    overflow-x: auto;
+    background: #f8fafc;
+    border-radius: 6px;
+  }
+
+  .ai-msg-assistant table {
+    width: 100%;
+    margin: 0.4em 0;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .ai-msg-assistant th,
+  .ai-msg-assistant td {
+    border: 1px solid #e2e8f0;
+    padding: 4px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .ai-msg-assistant a {
+    color: #4338ca;
+  }
+
   .ai-msg-sources {
     margin-top: 8px;
     padding-top: 8px;
@@ -588,24 +639,150 @@
       };
     }
 
-    function parseMarkdownToHTML(markdown) {
-      if (!markdown) return "";
-      let html = markdown
+    function escapeHtml(value) {
+      return String(value)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
 
-      html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
-      html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
-      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      html = html.replace(/^\* (.*$)/gim, '<li>$1</li>');
-      html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
-      html = html.replace(/(<li>.*<\/li>)/sim, '<ul>$1</ul>');
-      html = html.replace(/\n\n/g, '</p><p>');
-      html = html.replace(/\n/g, '<br/>');
+    function safeUrl(url) {
+      const trimmed = String(url || "").trim();
+      if (trimmed.charAt(0) === "/" && trimmed.charAt(1) !== "/") return escapeHtml(trimmed);
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") return escapeHtml(parsed.href);
+      } catch (e) {
+        return "";
+      }
+      return "";
+    }
 
-      return `<p>${html}</p>`;
+    function renderInline(text) {
+      const pattern = /\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`/g;
+      let html = "";
+      let last = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        html += escapeHtml(text.slice(last, match.index));
+        if (match[1] !== undefined && match[2] !== undefined) {
+          const href = safeUrl(match[2]);
+          const label = escapeHtml(match[1]);
+          html += href ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>" : label;
+        } else if (match[3] !== undefined) {
+          html += "<strong>" + escapeHtml(match[3]) + "</strong>";
+        } else if (match[4] !== undefined) {
+          html += "<em>" + escapeHtml(match[4]) + "</em>";
+        } else if (match[5] !== undefined) {
+          html += "<code>" + escapeHtml(match[5]) + "</code>";
+        }
+        last = match.index + match[0].length;
+      }
+      return html + escapeHtml(text.slice(last));
+    }
+
+    function isTableRow(line) {
+      return /^\s*\|.*\|\s*$/.test(line);
+    }
+
+    function renderTable(rows) {
+      let header = "";
+      const body = [];
+      rows.forEach(function (row) {
+        if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(row)) return;
+        const cells = row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+        const tag = header ? "td" : "th";
+        const rendered = "<tr>" + cells.map(function (cell) {
+          return "<" + tag + ">" + renderInline(cell.trim()) + "</" + tag + ">";
+        }).join("") + "</tr>";
+        if (!header) header = rendered;
+        else body.push(rendered);
+      });
+      return "<table><thead>" + header + "</thead><tbody>" + body.join("") + "</tbody></table>";
+    }
+
+    function renderBlocks(source) {
+      const lines = String(source).replace(/\r\n/g, "\n").split("\n");
+      const blocks = [];
+      let index = 0;
+      while (index < lines.length) {
+        const line = lines[index];
+        if (!line.trim()) {
+          index += 1;
+          continue;
+        }
+        if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
+          blocks.push("<hr>");
+          index += 1;
+          continue;
+        }
+        if (isTableRow(line)) {
+          const rows = [];
+          while (index < lines.length && isTableRow(lines[index])) {
+            rows.push(lines[index]);
+            index += 1;
+          }
+          blocks.push(renderTable(rows));
+          continue;
+        }
+        const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+        if (heading) {
+          const level = heading[1].length;
+          blocks.push("<h" + level + ">" + renderInline(heading[2]) + "</h" + level + ">");
+          index += 1;
+          continue;
+        }
+        if (/^>\s?/.test(line)) {
+          const quoted = [];
+          while (index < lines.length && /^>\s?/.test(lines[index])) {
+            quoted.push(lines[index].replace(/^>\s?/, ""));
+            index += 1;
+          }
+          blocks.push("<blockquote>" + quoted.map(renderInline).join("<br>") + "</blockquote>");
+          continue;
+        }
+        if (/^\s*[-*]\s+/.test(line)) {
+          const items = [];
+          while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+            items.push("<li>" + renderInline(lines[index].replace(/^\s*[-*]\s+/, "")) + "</li>");
+            index += 1;
+          }
+          blocks.push("<ul>" + items.join("") + "</ul>");
+          continue;
+        }
+        const paragraph = [];
+        while (
+          index < lines.length &&
+          lines[index].trim() &&
+          !isTableRow(lines[index]) &&
+          !/^(#{1,4})\s+/.test(lines[index]) &&
+          !/^>\s?/.test(lines[index]) &&
+          !/^\s*[-*]\s+/.test(lines[index]) &&
+          !/^(-{3,}|\*{3,})$/.test(lines[index].trim())
+        ) {
+          paragraph.push(lines[index]);
+          index += 1;
+        }
+        blocks.push("<p>" + paragraph.map(renderInline).join("<br>") + "</p>");
+      }
+      return blocks.join("");
+    }
+
+    function parseMarkdownToHTML(markdown) {
+      if (!markdown) return "";
+      const parts = String(markdown).split("```");
+      let html = "";
+      parts.forEach(function (part, index) {
+        if (index % 2 === 1) {
+          const newline = part.indexOf("\n");
+          const body = newline >= 0 ? part.slice(newline + 1) : part;
+          html += "<pre><code>" + escapeHtml(body.replace(/\n$/, "")) + "</code></pre>";
+          return;
+        }
+        html += renderBlocks(part);
+      });
+      return html;
     }
 
     function initBookStackAI() {

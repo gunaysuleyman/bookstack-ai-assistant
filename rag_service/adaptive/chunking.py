@@ -43,7 +43,7 @@ def chunk_document(page: PageDocument, child_tokens: int = 160, embed_max_tokens
     children: List[ChildChunk] = []
     for index, (heading, body) in enumerate(sections):
         parent_id = f"p{page.page_id}s{index}"
-        parent_text = f"# {heading}\n\n{body}".strip()
+        parent_text = f"# {heading}\n\n{body}".strip() if heading else body.strip()
         parents.append(ParentSection(parent_id, page.page_id, heading, parent_text, index))
         pieces = _pieces(body, child_tokens)
         for offset, piece in enumerate(pieces):
@@ -65,7 +65,7 @@ def chunk_document(page: PageDocument, child_tokens: int = 160, embed_max_tokens
 def _sections(markdown: str) -> List[tuple]:
     if not markdown.strip():
         return []
-    heading = "Introduction"
+    heading = ""
     lines: List[str] = []
     sections = []
     for line in markdown.splitlines():
@@ -81,7 +81,7 @@ def _sections(markdown: str) -> List[tuple]:
     body = "\n".join(lines).strip()
     if body:
         sections.append((heading, body))
-    return sections or [("Introduction", markdown.strip())]
+    return sections or [("", markdown.strip())]
 
 
 def _pieces(body: str, child_tokens: int) -> List[str]:

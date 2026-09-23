@@ -69,7 +69,7 @@ class HTMLCleaner:
         # Split text into section blocks by headings (#, ##, ###)
         lines = text.splitlines()
         sections = []
-        current_heading = "Introduction"
+        current_heading = ""
         current_lines = []
 
         heading_re = re.compile(r'^(#{1,6})\s+(.*)$')
@@ -96,7 +96,8 @@ class HTMLCleaner:
             if not section_text:
                 continue
 
-            header_context = f"[Shelf: {shelf_name}] > [Book: {book_name}] > [Chapter: {chapter_name}] > [Page: {page_title}]{tags_header}\n[Section: {heading}]"
+            section_label = f"\n[Section: {heading}]" if heading else ""
+            header_context = f"[Shelf: {shelf_name}] > [Book: {book_name}] > [Chapter: {chapter_name}] > [Page: {page_title}]{tags_header}{section_label}"
 
             # If section is small enough, make it a chunk
             if len(section_text) <= max_size:

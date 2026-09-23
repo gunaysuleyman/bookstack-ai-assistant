@@ -10,14 +10,14 @@
 | `ADAPTIVE_INDEXING=1` | Webhook işleri yeni revizyon yayıncısına gider. |
 | `ENABLE_INDEX_WORKER=1` | Kuyruk aynı süreçte işlenir. |
 
-Canlı kesim bu depoda yapılmadı. Değerlendirme belgesindeki ölçülmemiş kapılar dururken bayrağı `on` veya `shadow` yapmayın. `ADAPTIVE_RAG` varsayılanı `off` kalır.
+`ADAPTIVE_RAG` varsayılanı `off` kalır. `on` moduna geçmeden önce gerçek içerikle indeks ve kalite değerlendirmesi yapılmalıdır.
 
-`WEBHOOK_SECRET` boşken yeni imaj webhook isteklerini reddeder. Konteyneri yeniden oluşturmadan önce bu sırrı ve `RAG_SECRET_TOKEN` değerini varsayılan belgedeki örnekten farklı bir sırra çevirin. Çalışan eski imaj bu not yüzünden yeniden başlatılmamalıdır.
+`WEBHOOK_SECRET` boş ve adaptive indeksleme açıkken servis artık başlatılmaz. `RAG_SECRET_TOKEN` boş veya bilinen örnek değerse de başlatılmaz. Mevcut kurulumda konteyneri yeniden oluşturmadan önce bu iki sırrı ayarlayın; BookStack webhook URL'sindeki `?token=` değeriyle aynı webhook sırrını kullanın. BookStack ve RAG konteynerlerinde servis sırrı aynı olmalıdır.
 
 ## Uçlar
 
 - `GET /health` süreç ayaktadır.
-- `GET /ready` aktif koleksiyon, şema ve indeks sürümünü gösterir. İndeksin senkron sağlığı bu uçta iddia edilmez.
+- `GET /ready` aktif koleksiyonu ve `checks` alanını gösterir. Worker, webhook sırrı, servis sırrı veya temel indeks erişimi hazır değilse HTTP 503 döner. Bu kontrol tüm BookStack sayfalarının indekslendiğini garanti etmez.
 - `GET /api/jobs/status` servis sırrı ister. Kuyruk, lease, dead-letter ve tamamlanan sayıları döner.
 - `POST /api/sync` tam uzlaştırmayı kuyruğa yazar ve hemen döner. BookStack'e bu istek sırasında gitmez.
 - `POST /api/webhook` `?token=` veya `X-Webhook-Token` ile `WEBHOOK_SECRET` bekler. BookStack gövde imzası göndermez. Ağ sınırı kullanıcı yetkisinin yerine geçmez.
@@ -45,7 +45,7 @@ python -m adaptive.cli retry-dead JOB_ID
 
 ## Yeniden indeks ve geri dönüş
 
-Yeni indeks eski koleksiyonun üstüne yazılmaz. Geri dönüş: `ADAPTIVE_RAG=off` ve `ADAPTIVE_INDEXING=0` yapıp RAG konteynerini yeniden başlatın. Eski `bookstack_articles` koleksiyonu yerinde kalır.
+Yeni indeks eski koleksiyonun üstüne yazılmaz. Geri dönüş: `ADAPTIVE_RAG=off` ve `ADAPTIVE_INDEXING=0` yapıp RAG konteynerini yeniden başlatın. Eski `bookstack_articles` koleksiyonu yerinde kalır. Embedding modelini değiştirirken mevcut koleksiyon otomatik silinmez: başlangıç uyuşmazlık hatası verir. `ADAPTIVE_COLLECTION` için yeni sürümlü ad seçin, kontrollü tam uzlaştırma ve değerlendirme yapın, sonra trafiği yeni koleksiyona geçirin.
 
 Yeni indeksi doldurmak üretim verisine karşı bu oturumda çalıştırılmadı. Operatör kendi bakım penceresinde, yedeği aldıktan sonra webhook veya kontrollü uzlaştırma ile doldurmalıdır. Başlangıçta otomatik full sync yoktur.
 
@@ -58,7 +58,7 @@ Birlikte kopyalayın:
 
 Geri yüklemeden önce servisi durdurun. Tek süreç sahip olduğu için kopya, çalışan yazıcı varken tutarlı sayılmaz. Testler, kapatılmış SQLite dosyasının kopyasından aktif revizyon metninin okunabildiğini doğruladı. Tam Chroma dosya kopyası bu oturumda üretim volume'u üzerinde denenmedi.
 
-Sır değiştirmek: `RAG_SECRET_TOKEN` ve `WEBHOOK_SECRET` değerlerini BookStack ve RAG ortamında birlikte değiştirin, konteynerleri yeniden başlatın. Eski imzalı sayfa token'ları TTL sonunda zaten reddedilir. Tarayıcı kaynağında sır yoktur; buna rağmen sızıntı şüphesinde her iki sırrı da değiştirin.
+Sır değiştirmek: `RAG_SECRET_TOKEN` değerini BookStack ve RAG ortamında birlikte değiştirin; `WEBHOOK_SECRET` değerini BookStack webhook ayarındaki URL ile eşleyin; sonra kontrollü konteyner yeniden oluşturması yapın. Eski imzalı sayfa token'ları TTL sonunda reddedilir. Mevcut MariaDB volume'unda yalnız `.env` içindeki `DB_PASS` değişikliği veritabanı kullanıcı şifresini değiştirmez; önce gerçek DB kullanıcısını döndürün, ardından `.env` değerini güncelleyin. Mevcut BookStack `APP_KEY` değerini veri şifrelemesi ve oturumlara etkisini değerlendirmeden değiştirmeyin. Bu iki işlem için doğrulanmış yedek ve bakım penceresi gerekir.
 
 ## Test komutları
 
@@ -74,4 +74,10 @@ Küçük kapasite dumanı, varsayılan 40 sayfa, hash gömme:
 python benchmarks/capacity_smoke.py --pages 40
 ```
 
-10.000 sayfalık koşu bu komutun varsayılanı değildir ve bu teslimde çalıştırılmamıştır.
+Gerçek sayfalara daha yakın çok bölümlü sentetik profil (Gemini çağırmaz):
+
+```text
+python benchmarks/capacity_smoke.py --pages 10000 --sections 12 --words-per-section 80 --queries 100 --embedder minilm
+```
+
+Çıktı gerçek chunk sayısını, sayfa başına chunk'ı ve sıralı aramada p50/p95'i gösterir. Bu yine gerçek BookStack içeriğini, Gemini embedding kotasını veya eşzamanlı kullanıcı yükünü temsil etmez; 10.000 sayfa varsayılan koşu değildir.

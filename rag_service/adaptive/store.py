@@ -169,6 +169,9 @@ class StateStore:
                 tags_str TEXT,
                 revision_id TEXT
             );
+            CREATE INDEX IF NOT EXISTS idx_catalog_book_sort ON catalog_pages(book_name, title);
+            CREATE INDEX IF NOT EXISTS idx_catalog_book_id ON catalog_pages(book_id);
+            CREATE INDEX IF NOT EXISTS idx_page_state_published ON page_state(status, page_id);
             CREATE TABLE IF NOT EXISTS vector_gc (
                 chunk_id TEXT PRIMARY KEY,
                 revision_id TEXT
@@ -192,6 +195,21 @@ class StateStore:
                 prompt_tokens_actual INTEGER,
                 completion_tokens_actual INTEGER,
                 latency_ms REAL
+            );
+            CREATE TABLE IF NOT EXISTS assistant_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at REAL NOT NULL,
+                user_id TEXT,
+                query TEXT,
+                answer TEXT,
+                provider TEXT,
+                model TEXT,
+                reasoning_effort TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                input_usd_per_mtok REAL,
+                output_usd_per_mtok REAL,
+                cost_usd REAL
             );
             """
         )
@@ -739,19 +757,97 @@ class StateStore:
         return rows[offset : offset + limit]
 
     def catalog_counts(self, allowed: Optional[Sequence[int]]) -> Dict[str, Any]:
-        rows = self.catalog_rows(allowed, 0, 100000)
-        books = {}
+        if allowed is not None and len(allowed) == 0:
+            return {"pages": 0, "books": 0, "book_pages": {}, "shelves": []}
+        book_pages: Dict[str, int] = {}
         shelves = set()
-        for row in rows:
-            books.setdefault(row["book_name"] or "General Library", 0)
-            books[row["book_name"] or "General Library"] += 1
-            try:
-                names = json.loads(row["shelf_names"] or "[]")
-            except json.JSONDecodeError:
-                names = []
-            for name in names:
-                shelves.add(name)
-        return {"pages": len(rows), "books": len(books), "book_pages": books, "shelves": sorted(shelves)}
+        page_total = 0
+        if allowed is None:
+            page_total = int(self.conn.execute("SELECT COUNT(*) AS n FROM catalog_pages").fetchone()["n"])
+            for row in self.conn.execute(
+                """
+                SELECT book_id, COALESCE(book_name, 'General Library') AS book_name, COUNT(*) AS n
+                FROM catalog_pages
+                GROUP BY book_id, book_name
+                """
+            ).fetchall():
+                _remember_book(book_pages, row["book_id"], row["book_name"], row["n"])
+            for row in self.conn.execute("SELECT shelf_names FROM catalog_pages").fetchall():
+                shelves.update(_shelf_names(row["shelf_names"]))
+            return {"pages": page_total, "books": len(book_pages), "book_pages": book_pages, "shelves": sorted(shelves)}
+
+        ids = list(allowed)
+        for start in range(0, len(ids), 200):
+            batch = ids[start : start + 200]
+            placeholders = ",".join("?" for _ in batch)
+            page_total += int(
+                self.conn.execute(
+                    f"SELECT COUNT(*) AS n FROM catalog_pages WHERE page_id IN ({placeholders})",
+                    batch,
+                ).fetchone()["n"]
+            )
+            for row in self.conn.execute(
+                f"""
+                SELECT book_id, COALESCE(book_name, 'General Library') AS book_name, COUNT(*) AS n
+                FROM catalog_pages
+                WHERE page_id IN ({placeholders})
+                GROUP BY book_id, book_name
+                """,
+                batch,
+            ).fetchall():
+                _remember_book(book_pages, row["book_id"], row["book_name"], row["n"])
+            for row in self.conn.execute(
+                f"SELECT shelf_names FROM catalog_pages WHERE page_id IN ({placeholders})",
+                batch,
+            ).fetchall():
+                shelves.update(_shelf_names(row["shelf_names"]))
+        return {"pages": page_total, "books": len(book_pages), "book_pages": book_pages, "shelves": sorted(shelves)}
+
+    def catalog_books(self, allowed: Optional[Sequence[int]], offset: int, limit: int) -> List[Dict[str, Any]]:
+        if limit <= 0:
+            return []
+        if allowed is not None and len(allowed) == 0:
+            return []
+        if allowed is None:
+            rows = self.conn.execute(
+                """
+                SELECT book_id,
+                       COALESCE(book_name, 'General Library') AS book_name,
+                       COUNT(*) AS page_count
+                FROM catalog_pages
+                GROUP BY book_id, book_name
+                ORDER BY book_name
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+            return [
+                {"book_id": int(row["book_id"] or 0), "book_name": row["book_name"], "page_count": int(row["page_count"])}
+                for row in rows
+            ]
+        merged: Dict[int, Dict[str, Any]] = {}
+        ids = list(allowed)
+        for start in range(0, len(ids), 200):
+            batch = ids[start : start + 200]
+            placeholders = ",".join("?" for _ in batch)
+            for row in self.conn.execute(
+                f"""
+                SELECT book_id,
+                       COALESCE(book_name, 'General Library') AS book_name,
+                       COUNT(*) AS page_count
+                FROM catalog_pages
+                WHERE page_id IN ({placeholders})
+                GROUP BY book_id, book_name
+                """,
+                batch,
+            ).fetchall():
+                book_id = int(row["book_id"] or 0)
+                current = merged.setdefault(book_id, {"book_id": book_id, "book_name": row["book_name"], "page_count": 0})
+                current["page_count"] += int(row["page_count"])
+                if row["book_name"]:
+                    current["book_name"] = row["book_name"]
+        ordered = sorted(merged.values(), key=lambda item: (item["book_name"] or "", item["book_id"]))
+        return ordered[offset : offset + limit]
 
     def log_shadow(self, query_fp: str, legacy_pages: List[int], adaptive_pages: List[int], latency_ms: float) -> None:
         self.conn.execute(
@@ -777,6 +873,44 @@ class StateStore:
                 usage.prompt_tokens_actual,
                 usage.completion_tokens_actual,
                 usage.latency_ms,
+            ),
+        )
+
+    def log_assistant_turn(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        answer: str,
+        provider: str,
+        model: str,
+        reasoning_effort: str,
+        input_tokens: int,
+        output_tokens: int,
+        input_usd_per_mtok: Optional[float],
+        output_usd_per_mtok: Optional[float],
+        cost_usd: Optional[float],
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO assistant_turns(
+                created_at, user_id, query, answer, provider, model, reasoning_effort,
+                input_tokens, output_tokens, input_usd_per_mtok, output_usd_per_mtok, cost_usd
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                time.time(),
+                user_id,
+                query,
+                answer,
+                provider,
+                model,
+                reasoning_effort,
+                input_tokens,
+                output_tokens,
+                input_usd_per_mtok,
+                output_usd_per_mtok,
+                cost_usd,
             ),
         )
 
@@ -817,3 +951,21 @@ class _Transaction:
         finally:
             self.lock.release()
         return False
+
+
+def _remember_book(books: Dict[str, Dict[str, Any]], book_id: Any, book_name: str, count: Any) -> None:
+    name = book_name or "General Library"
+    key = f"{int(book_id or 0)}:{name}"
+    current = books.get(key)
+    if current is None:
+        books[key] = {"book_id": int(book_id or 0), "book_name": name, "pages": int(count)}
+        return
+    current["pages"] += int(count)
+
+
+def _shelf_names(raw: Optional[str]) -> List[str]:
+    try:
+        names = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+    return [str(name) for name in names if name]

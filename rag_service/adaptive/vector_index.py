@@ -36,7 +36,11 @@ class VectorIndex:
         except Exception:
             existing = None
         if existing is not None and (existing.metadata or {}).get("embedding_model") != self.embedding_model_id:
-            self.client.delete_collection(self.collection_name)
+            raise RuntimeError(
+                f"Embedding model mismatch for collection {self.collection_name!r}: "
+                f"stored={(existing.metadata or {}).get('embedding_model')!r}, configured={self.embedding_model_id!r}. "
+                "The existing index was preserved. Build a new versioned collection and reconcile it before switching."
+            )
         return self.client.get_or_create_collection(
             name=self.collection_name,
             embedding_function=self.embedding_function,

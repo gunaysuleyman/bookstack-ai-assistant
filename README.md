@@ -78,12 +78,12 @@ Trigger initial sync:
 
 ```bash
 curl -X POST http://localhost:8000/api/sync \
-  -H "X-RAG-Token: my_super_secret_local_token_123"
+  -H "X-RAG-Token: <your RAG_SECRET_TOKEN>"
 ```
 
 Or configure a BookStack webhook for automatic real-time sync:
 - Navigate to **Settings → Webhooks → Create Webhook**
-- **Endpoint URL**: `http://rag_service:8000/api/webhook`
+- **Endpoint URL**: `http://rag_service:8000/api/webhook?token=<WEBHOOK_SECRET>` (use the configured secret; do not copy this placeholder)
 - **Events**: Page Create, Page Update, Page Delete
 
 ---
@@ -116,7 +116,7 @@ Or configure a BookStack webhook for automatic real-time sync:
 | `AI_PROVIDER` | AI backend provider (`gemini` or `openai`) | `gemini` |
 | `BOOKSTACK_TOKEN_ID` | BookStack API token ID | _(required for sync)_ |
 | `BOOKSTACK_TOKEN_SECRET` | BookStack API token secret | _(required for sync)_ |
-| `RAG_SECRET_TOKEN` | Server-side HMAC and admin API secret. Not sent by the browser. | `my_super_secret_local_token_123` |
+| `RAG_SECRET_TOKEN` | Server-side HMAC and admin API secret. Not sent by the browser. | _(required; unique secret)_ |
 | `WEBHOOK_SECRET` | Query/header secret for BookStack webhooks | _(required)_ |
 | `TOKEN_TTL_SECONDS` | Maximum age of a signed permission snapshot | `900` |
 | `ADAPTIVE_RAG` | `off`, `shadow`, or `on` | `off` |

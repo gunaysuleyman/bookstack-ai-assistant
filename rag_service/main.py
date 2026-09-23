@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from adaptive.auth import AuthFailure, scope_from_payload, service_token_ok, verify_signed_payload
@@ -20,6 +21,7 @@ from adaptive.jobs import apply_page_job, apply_reconcile
 from adaptive.store import StateStore
 from adaptive.vector_index import VectorIndex
 from adaptive.worker import IndexWorker
+from adaptive.provider import collect_turn_usages, complete_llm, summarize_turn
 from rag_engine import RAGEngine
 from sync import BookStackSync
 
@@ -58,11 +60,31 @@ def _build_adaptive() -> None:
     adaptive_engine = AdaptiveEngine(state_store, vectors, settings, llm=_adaptive_llm)
 
 
-def _adaptive_llm(system_instruction: str, user_prompt: str, purpose: str):
-    if settings.answer_mode == "extractive" and purpose == "answer":
+def _adaptive_llm(system_instruction: str, user_prompt: str, purpose: str, **kwargs):
+    if settings.answer_mode == "extractive" and purpose in {"answer", "tool_select", "tool_answer"}:
         raise RuntimeError("extractive mode")
-    text = rag_engine._call_llm_api(system_instruction, user_prompt)
-    return type("LLMText", (), {"text": text, "usage": rag_engine.last_usage})()
+    if rag_engine.provider not in {"gemini", "openai"}:
+        raise ValueError(f"Unsupported AI_PROVIDER: {rag_engine.provider}")
+    result = complete_llm(
+        provider=rag_engine.provider,
+        model=rag_engine.gemini_model,
+        fallbacks=rag_engine.gemini_fallbacks,
+        api_key=rag_engine.gemini_key,
+        openai_model=rag_engine.openai_model,
+        openai_key=rag_engine.openai_key,
+        reasoning_effort=rag_engine.openai_reasoning,
+        system_instruction=system_instruction,
+        user_prompt=user_prompt,
+        purpose=purpose,
+        timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", "90" if rag_engine.openai_reasoning else "30")),
+        max_retries=0 if purpose in {"tool_select", "tool_answer"} else 2,
+        contents=kwargs.get("contents"),
+        tools=kwargs.get("tools"),
+        tool_config=kwargs.get("tool_config"),
+        max_output_tokens=settings.output_reserve_tokens,
+    )
+    rag_engine.last_usage = result.usage
+    return result
 
 
 class ChatMessage(BaseModel):
@@ -199,9 +221,26 @@ def health_check():
 @app.get("/ready")
 def ready():
     info = manifest(settings)
-    info["ready"] = True
-    info["worker"] = bool(index_worker and index_worker._thread and index_worker._thread.is_alive())
-    return info
+    worker_required = settings.adaptive_indexing and os.getenv("ENABLE_INDEX_WORKER", "1") == "1"
+    worker_alive = bool(index_worker and index_worker._thread and index_worker._thread.is_alive())
+    webhook_ready = not settings.adaptive_indexing or bool(settings.webhook_secret)
+    service_secret_ready = bool(settings.service_secret) and settings.service_secret != "my_super_secret_local_token_123"
+    index_ready = settings.mode != "on" or adaptive_engine is not None
+    if index_ready and settings.mode == "on":
+        try:
+            published = bool(state_store.active_revision_map())
+            index_ready = not published or adaptive_engine.vectors.collection.count() > 0
+        except Exception:
+            index_ready = False
+    info["worker"] = worker_alive
+    info["checks"] = {
+        "worker": not worker_required or worker_alive,
+        "webhook_configured": webhook_ready,
+        "service_secret_configured": service_secret_ready,
+        "index_available": index_ready,
+    }
+    info["ready"] = all(info["checks"].values())
+    return JSONResponse(status_code=200 if info["ready"] else 503, content=info)
 
 
 @app.get("/api/jobs/status")
@@ -229,26 +268,28 @@ def ai_search(payload: SearchQuery, x_rag_token: Optional[str] = Header(None)):
     allowed = None if scope.allows_all() else list(scope.allowed_page_ids or [])
     history_dicts = [{"role": item.role, "content": item.content} for item in payload.history] if payload.history else []
     diagnostics = service_token_ok(x_rag_token, settings.service_secret)
-    if settings.mode == "on" and adaptive_engine is not None:
-        result = adaptive_engine.answer(
-            payload.query,
-            scope,
-            current_page=payload.current_page,
-            history=history_dicts,
-            diagnostics=diagnostics,
-        )
-    else:
-        result = rag_engine.search_and_answer(
-            query=payload.query,
-            top_k=settings.legacy_result_limit,
-            current_page=payload.current_page,
-            allowed_page_ids=allowed,
-            history=history_dicts,
-        )
-        if rag_engine.last_usage is not None:
-            state_store.log_usage(rag_engine.last_usage)
-        if settings.mode == "shadow" and adaptive_engine is not None:
-            _record_shadow(payload.query, scope, result)
+    with collect_turn_usages() as usages:
+        if settings.mode == "on" and adaptive_engine is not None:
+            result = adaptive_engine.answer(
+                payload.query,
+                scope,
+                current_page=payload.current_page,
+                history=history_dicts,
+                diagnostics=diagnostics,
+            )
+        else:
+            result = rag_engine.search_and_answer(
+                query=payload.query,
+                top_k=settings.legacy_result_limit,
+                current_page=payload.current_page,
+                allowed_page_ids=allowed,
+                history=history_dicts,
+            )
+            if rag_engine.last_usage is not None:
+                state_store.log_usage(rag_engine.last_usage)
+            if settings.mode == "shadow" and adaptive_engine is not None:
+                _record_shadow(payload.query, scope, result)
+        _log_assistant_turn(scope, payload.query, result, usages)
     body = _public_result(result, payload, history_dicts)
     if diagnostics and "assessments" in result:
         body["diagnostics"] = {
@@ -263,6 +304,32 @@ def ai_search(payload: SearchQuery, x_rag_token: Optional[str] = Header(None)):
             ],
         }
     return body
+
+
+def _log_assistant_turn(scope: AuthorizationScope, query: str, result: dict, usages: list) -> None:
+    summary = summarize_turn(usages)
+    effort = ""
+    if not summary["provider"]:
+        summary["provider"] = rag_engine.provider
+        summary["model"] = rag_engine.openai_model if rag_engine.provider == "openai" else rag_engine.gemini_model
+    if summary["provider"] == "openai":
+        effort = rag_engine.openai_reasoning
+    try:
+        state_store.log_assistant_turn(
+            user_id=str(scope.principal),
+            query=query,
+            answer=str((result or {}).get("answer") or ""),
+            reasoning_effort=effort,
+            provider=summary["provider"],
+            model=summary["model"],
+            input_tokens=summary["input_tokens"],
+            output_tokens=summary["output_tokens"],
+            input_usd_per_mtok=summary["input_usd_per_mtok"],
+            output_usd_per_mtok=summary["output_usd_per_mtok"],
+            cost_usd=summary["cost_usd"],
+        )
+    except Exception:
+        logger.warning("Assistant turn log failed")
 
 
 def _record_shadow(query: str, scope: AuthorizationScope, legacy_result: dict) -> None:
@@ -321,9 +388,11 @@ async def handle_webhook(request: Request, x_webhook_token: Optional[str] = Head
 @app.on_event("startup")
 def startup_event():
     global index_worker
-    logger.info("RAG service ready. Startup full sync is disabled.")
-    if not settings.webhook_secret:
-        logger.warning("WEBHOOK_SECRET is empty. Webhook sync rejects every event until it is set.")
+    if not settings.service_secret or settings.service_secret == "my_super_secret_local_token_123":
+        raise RuntimeError("RAG_SECRET_TOKEN must be a unique non-default secret")
+    if settings.adaptive_indexing and not settings.webhook_secret:
+        raise RuntimeError("WEBHOOK_SECRET is required when ADAPTIVE_INDEXING is enabled")
+    logger.info("RAG service starting. Startup full sync is disabled.")
     _build_adaptive()
     if settings.adaptive_indexing and adaptive_indexer is not None:
         adaptive_indexer.recover()

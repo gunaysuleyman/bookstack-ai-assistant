@@ -5,10 +5,10 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - MYSQL_ROOT_PASSWORD=${DB_PASS:-secret_password}
+      - MYSQL_ROOT_PASSWORD=${DB_PASS:?Set DB_PASS in .env}
       - MYSQL_DATABASE=${DB_NAME:-bookstackapp}
       - MYSQL_USER=${DB_USER:-bookstack}
-      - MYSQL_PASSWORD=${DB_PASS:-secret_password}
+      - MYSQL_PASSWORD=${DB_PASS:?Set DB_PASS in .env}
     volumes:
       - bookstack_db_data:/config
     restart: unless-stopped
@@ -22,17 +22,17 @@ services:
       - PUID=1000
       - PGID=1000
       - APP_URL=${BOOKSTACK_EXTERNAL_URL:-http://localhost:6875}
-      - APP_KEY=${APP_KEY:-base64:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+      - APP_KEY=${APP_KEY:?Set APP_KEY in .env}
       - APP_THEME=custom
       - DB_HOST=bookstack_db
       - DB_PORT=3306
       - DB_USER=${DB_USER:-bookstack}
       - DB_USERNAME=${DB_USER:-bookstack}
-      - DB_PASS=${DB_PASS:-secret_password}
-      - DB_PASSWORD=${DB_PASS:-secret_password}
+      - DB_PASS=${DB_PASS:?Set DB_PASS in .env}
+      - DB_PASSWORD=${DB_PASS:?Set DB_PASS in .env}
       - DB_DATABASE=${DB_NAME:-bookstackapp}
       - ALLOWED_SSR_HOSTS=rag_service,localhost,127.0.0.1
-      - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:?Set RAG_SECRET_TOKEN in .env}
       - RAG_INTERNAL_URL=http://rag_service:8000
       - RAG_SERVICE_PUBLIC_URL=${RAG_SERVICE_PUBLIC_URL:-http://localhost:8000/api/ai-search}
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
@@ -53,18 +53,20 @@ services:
       dockerfile: Dockerfile
     container_name: bookstack_rag_service
     ports:
-      - "8000:8000"
+      - "${RAG_BIND_HOST:-127.0.0.1}:8000:8000"
     environment:
       - BOOKSTACK_URL=http://bookstack:80
       - BOOKSTACK_EXTERNAL_URL=${BOOKSTACK_EXTERNAL_URL:-http://localhost:6875}
       - BOOKSTACK_TOKEN_ID=${BOOKSTACK_TOKEN_ID}
       - BOOKSTACK_TOKEN_SECRET=${BOOKSTACK_TOKEN_SECRET}
-      - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:-my_super_secret_local_token_123}
+      - RAG_SECRET_TOKEN=${RAG_SECRET_TOKEN:?Set RAG_SECRET_TOKEN in .env}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
       - TOKEN_TTL_SECONDS=${TOKEN_TTL_SECONDS:-900}
       - ADAPTIVE_RAG=${ADAPTIVE_RAG:-0}
       - ADAPTIVE_INDEXING=${ADAPTIVE_INDEXING:-0}
       - ENABLE_INDEX_WORKER=${ENABLE_INDEX_WORKER:-1}
+      - ADAPTIVE_TOOLS=${ADAPTIVE_TOOLS:-1}
+      - MAX_MODEL_CALLS=${MAX_MODEL_CALLS:-3}
       - RAG_STATE_DIR=/app/chroma_db
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -72,8 +74,13 @@ services:
       - GEMINI_VISION_MODEL=${GEMINI_VISION_MODEL:-gemini-3.8-flash}
       - GEMINI_FALLBACK_MODELS=${GEMINI_FALLBACK_MODELS:-gemini-flash-latest,gemini-3.6-flash}
       - EMBEDDING_MODEL_ID=${EMBEDDING_MODEL_ID:-gemini-embedding-001}
+      - ADAPTIVE_COLLECTION=${ADAPTIVE_COLLECTION:-bookstack_articles_pc_v1}
+      - IMAGE_TRUSTED_HOSTS=${IMAGE_TRUSTED_HOSTS:-}
+      - IMAGE_ALLOW_EXTERNAL=${IMAGE_ALLOW_EXTERNAL:-0}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - RESONING_OPENAI_MODEL=${RESONING_OPENAI_MODEL:-}
+      - REASONING_OPENAI_MODEL=${REASONING_OPENAI_MODEL:-}
       - CHROMA_PERSIST_DIR=/app/chroma_db
       - AI_ALLOWED_ROLES=${AI_ALLOWED_ROLES:-admin,internal}
     volumes:

@@ -20,6 +20,11 @@ class RAGEngine:
         fallback_str = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-flash-latest,gemini-3.6-flash")
         self.gemini_fallbacks = [m.strip() for m in fallback_str.split(",") if m.strip()]
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.openai_reasoning = (
+            os.getenv("REASONING_OPENAI_MODEL")
+            or os.getenv("RESONING_OPENAI_MODEL")
+            or ""
+        ).strip().lower()
         self.chroma_dir = os.getenv("CHROMA_PERSIST_DIR", "/app/chroma_db")
         self.metadata_scans = 0
         self.last_usage = None
@@ -47,7 +52,12 @@ class RAGEngine:
         except Exception:
             existing = None
         if existing is not None and (existing.metadata or {}).get("embedding_model") != model_id:
-            self.chroma_client.delete_collection(self.collection_name)
+            logger.warning(
+                "Legacy collection %s uses a different embedding model; preserving it. "
+                "Use a versioned collection for migration.",
+                self.collection_name,
+            )
+            return self.chroma_client.get_collection(name=self.collection_name)
         return self.chroma_client.get_or_create_collection(
             name=self.collection_name,
             embedding_function=self.embedding_fn,
@@ -126,10 +136,11 @@ class RAGEngine:
             api_key=self.gemini_key,
             openai_model=self.openai_model,
             openai_key=self.openai_key,
+            reasoning_effort=self.openai_reasoning,
             system_instruction=system_instruction,
             user_prompt=user_prompt,
             purpose="legacy",
-            timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+            timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", "90" if self.openai_reasoning else "30")),
         )
         self.last_usage = result.usage
         return result.text

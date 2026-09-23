@@ -29,10 +29,12 @@ def pack_context(
     dropped: List[dict] = []
     used = 0
     seen = set()
+    seen_parents = set()
     for _question, group in groups.items():
         share_used = 0
         for candidate in group:
-            if candidate.chunk_id in seen:
+            parent_key = (candidate.parent_id, candidate.revision_id)
+            if candidate.chunk_id in seen or (candidate.parent_id and parent_key in seen_parents):
                 dropped.append({"chunk_id": candidate.chunk_id, "reason": "duplicate"})
                 continue
             text = _with_parent(candidate, parent_lookup, parent_token_limit)
@@ -44,6 +46,8 @@ def pack_context(
                     if excerpt:
                         selected.append(candidate.model_copy(update={"text": excerpt}))
                         seen.add(candidate.chunk_id)
+                        if candidate.parent_id:
+                            seen_parents.add(parent_key)
                         used += estimate_tokens(excerpt)
                         share_used += estimate_tokens(excerpt)
                 dropped.append({"chunk_id": candidate.chunk_id, "reason": "budget"})
@@ -51,6 +55,8 @@ def pack_context(
             packed = candidate.model_copy(update={"text": text})
             selected.append(packed)
             seen.add(candidate.chunk_id)
+            if candidate.parent_id:
+                seen_parents.add(parent_key)
             share_used += tokens
             used += tokens
     return ContextPackage(selected=selected, estimated_tokens=used, dropped=dropped)

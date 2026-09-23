@@ -56,6 +56,9 @@ class Settings:
     max_history_messages: int
     max_history_chars: int
     image_prompt_version: str
+    tools_enabled: bool
+    max_tool_result_passages: int
+    catalog_book_page_size: int
 
 
 def load_settings() -> Settings:
@@ -87,7 +90,7 @@ def load_settings() -> Settings:
         candidate_step=int(os.getenv("CANDIDATE_STEP", "12")),
         max_candidates=int(os.getenv("MAX_CANDIDATES", "40")),
         acl_batch=int(os.getenv("ACL_FILTER_BATCH", "200")),
-        max_model_calls=int(os.getenv("MAX_MODEL_CALLS", "2")),
+        max_model_calls=int(os.getenv("MAX_MODEL_CALLS", "3")),
         request_deadline_s=float(os.getenv("REQUEST_DEADLINE_SECONDS", "25")),
         legacy_result_limit=int(os.getenv("LEGACY_RESULT_LIMIT", "8")),
         planner_enabled=_flag("PLANNER_ENABLED", "0"),
@@ -100,6 +103,9 @@ def load_settings() -> Settings:
         max_history_messages=int(os.getenv("MAX_HISTORY_MESSAGES", "12")),
         max_history_chars=int(os.getenv("MAX_HISTORY_CHARS", "4000")),
         image_prompt_version=os.getenv("IMAGE_PROMPT_VERSION", "v1"),
+        tools_enabled=_flag("ADAPTIVE_TOOLS", "1"),
+        max_tool_result_passages=int(os.getenv("MAX_TOOL_RESULT_PASSAGES", "8")),
+        catalog_book_page_size=int(os.getenv("CATALOG_BOOK_PAGE_SIZE", "20")),
     )
 
 
@@ -119,4 +125,6 @@ def manifest(settings: Settings) -> dict:
         "chroma_owner": "single_process_persistent_client",
         "answer_cache": "disabled",
         "token_ttl_seconds": settings.token_ttl_seconds,
+        "tools_enabled": settings.tools_enabled,
+        "max_model_calls": settings.max_model_calls,
     }

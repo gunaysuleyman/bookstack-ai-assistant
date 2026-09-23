@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Dict, Iterable, List, Optional, Sequence
 
@@ -8,6 +9,7 @@ from adaptive.vector_index import VectorIndex
 
 
 _FTS_TOKEN = re.compile(r"[\w]+", re.UNICODE)
+logger = logging.getLogger("AdaptiveHybrid")
 
 
 def fts_match(text: str) -> str:
@@ -49,7 +51,11 @@ class HybridSearcher:
             return []
         active_map = active if active is not None else self.store.active_revision_map()
         allowed = None if scope.allows_all() else set(scope.allowed_page_ids or [])
-        vector_ids = self._vector_ranks(query, allowed, limit)
+        try:
+            vector_ids = self._vector_ranks(query, allowed, limit)
+        except Exception:
+            logger.warning("Vector search unavailable; using lexical search")
+            vector_ids = []
         lexical_ids = self._lexical_ranks(query, allowed, active_map, limit)
         fused = reciprocal_rank_fusion([vector_ids, lexical_ids])
         if not fused:
