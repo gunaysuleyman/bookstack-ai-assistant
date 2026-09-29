@@ -24,6 +24,8 @@ myenv/
 .pytest_cache/
 pytest-cache-files-*/
 tests/
+rag_service/tests/
+!rag_service/tests/**
 
 # IDE
 .vscode/

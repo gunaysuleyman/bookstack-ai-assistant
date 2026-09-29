@@ -130,6 +130,11 @@ def bind_budget(budget: Optional[CallBudget]):
         _REQUEST_BUDGET.reset(token)
 
 
+def remaining_model_calls() -> Optional[int]:
+    budget = _REQUEST_BUDGET.get()
+    return None if budget is None else max(0, budget.max_calls - budget.calls)
+
+
 def redact_secrets(text: str, secrets: List[str]) -> str:
     cleaned = text or ""
     for secret in secrets:
