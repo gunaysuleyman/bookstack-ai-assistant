@@ -753,8 +753,34 @@ class StateStore:
             return []
         if page_ids is not None and len(page_ids) == 0:
             return []
-        acl_sql, acl_params = _acl_clause(page_ids, "p.page_id")
         weights = ", ".join(str(weight) for weight in FTS_WEIGHTS)
+        if page_ids is None:
+            # Rank inside FTS first and join only the head: joining every
+            # match of a common word to page_state costs more than the ranking.
+            # Superseded revisions are deleted on publish, so the head rarely
+            # loses rows; if it does, fall back to the full join below.
+            head = limit * 4
+            rows = self._read(
+                f"""
+                SELECT f.chunk_id AS chunk_id, f.page_id AS page_id, f.revision_id AS revision_id, f.score AS score
+                FROM (
+                    SELECT chunk_id, page_id, revision_id, bm25(chunks_fts, {weights}) AS score
+                    FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY score LIMIT ?
+                ) f
+                JOIN page_state p
+                  ON p.page_id = CAST(f.page_id AS INTEGER)
+                 AND p.active_revision = f.revision_id
+                 AND p.status = 'published'
+                ORDER BY f.score
+                LIMIT ?
+                """,
+                [match, head, limit],
+            )
+            if len(rows) >= limit or not self._read(
+                "SELECT 1 FROM chunks_fts WHERE chunks_fts MATCH ? LIMIT 1 OFFSET ?", [match, head]
+            ):
+                return rows
+        acl_sql, acl_params = _acl_clause(page_ids, "p.page_id")
         return self._read(
             f"""
             SELECT chunks_fts.chunk_id AS chunk_id, chunks_fts.page_id AS page_id,
@@ -776,20 +802,24 @@ class StateStore:
         """Chunks of active revisions of published pages, with page labels, in one query."""
         if not chunk_ids:
             return {}
-        rows = self._read(
-            """
-            SELECT c.chunk_id, c.page_id, c.revision_id, c.parent_id, c.heading, c.body,
-                   p.title, p.url, p.book_name, p.chapter_name, p.shelf_names
-            FROM chunk_records c
-            JOIN page_state p
-              ON p.page_id = c.page_id
-             AND p.active_revision = c.revision_id
-             AND p.status = 'published'
-            WHERE c.chunk_id IN (SELECT value FROM json_each(?))
-            """,
-            [json.dumps(list(chunk_ids))],
-        )
-        return {row["chunk_id"]: row for row in rows}
+        found: Dict[str, sqlite3.Row] = {}
+        for batch in _batches(list(chunk_ids)):
+            placeholders = ",".join("?" for _ in batch)
+            for row in self._read(
+                f"""
+                SELECT c.chunk_id, c.page_id, c.revision_id, c.parent_id, c.heading, c.body,
+                       p.title, p.url, p.book_name, p.chapter_name, p.shelf_names
+                FROM chunk_records c
+                CROSS JOIN page_state p
+                WHERE c.chunk_id IN ({placeholders})
+                  AND p.page_id = c.page_id
+                  AND p.active_revision = c.revision_id
+                  AND p.status = 'published'
+                """,
+                batch,
+            ):
+                found[row["chunk_id"]] = row
+        return found
 
     def published_count(self) -> int:
         row = self._read("SELECT COUNT(*) AS n FROM page_state WHERE status = 'published'", [])
@@ -860,11 +890,12 @@ class StateStore:
     def get_chunks(self, chunk_ids: Sequence[str]) -> Dict[str, sqlite3.Row]:
         if not chunk_ids:
             return {}
-        rows = self.conn.execute(
-            "SELECT * FROM chunk_records WHERE chunk_id IN (SELECT value FROM json_each(?))",
-            (json.dumps(list(chunk_ids)),),
-        ).fetchall()
-        return {row["chunk_id"]: row for row in rows}
+        found: Dict[str, sqlite3.Row] = {}
+        for batch in _batches(list(chunk_ids)):
+            placeholders = ",".join("?" for _ in batch)
+            for row in self.conn.execute(f"SELECT * FROM chunk_records WHERE chunk_id IN ({placeholders})", batch).fetchall():
+                found[row["chunk_id"]] = row
+        return found
 
     def get_parent(self, parent_id: str, revision_id: str) -> Optional[sqlite3.Row]:
         return self.conn.execute(
@@ -1272,3 +1303,9 @@ def _acl_clause(page_ids: Optional[Sequence[int]], column: str) -> tuple:
     if page_ids is None:
         return "", []
     return f"AND {column} IN (SELECT value FROM json_each(?))", [json.dumps([int(item) for item in page_ids])]
+
+
+def _batches(items: List[Any], size: int = 500) -> Iterable[List[Any]]:
+    """Primary-key IN lists stay small enough for SQLite's variable limit and use the index."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
