@@ -1,94 +1,86 @@
 # Ölçek ve hiyerarşi stres testi
 
-Tarih: 30 Eylül 2026. Ortam: Linux, 4 çekirdek, Python 3.11, Chroma 1.3.5. Ücretli model çağrısı yapılmadı. Üretim Chroma dizini ve BookStack verisi kullanılmadı; bütün ölçümler geçici dizinde, gerçek `Indexer` ve gerçek `document_search` aracı (`ToolRegistry` + `HybridSearcher`) üzerinden alındı.
+Tarih: 30 Eylül 2026. Ortam: Linux, 4 çekirdek, Python 3.11, Chroma 1.3.5. Ücretli model çağrısı yapılmadı. Üretim Chroma dizini ve BookStack verisi kullanılmadı. Bütün ölçümler geçici dizinde, gerçek `Indexer` ve gerçek `document_search` / `catalog_*` araçları (`ToolRegistry` + `HybridSearcher`) üzerinden alındı.
 
 Tekrar üretmek için:
 
 ```bash
 cd rag_service
-python benchmarks/stress_scale.py --preset quick                 # ~40 sn, 500 sayfa
-python benchmarks/stress_scale.py --preset full --report out.md  # ~35 dk, 10.000 sayfa
+python benchmarks/stress_scale.py --preset quick                 # ~1 dk, 500 sayfa
+python benchmarks/stress_scale.py --preset full --report out.md  # ~15 dk, 10.000 sayfa
+python -m pytest -q tests/test_hierarchy_scale.py                # birim testleri
 ```
 
 ## Korpus
 
-Sentetik ama BookStack yapısında: 60 raf, 1000 kitap, 1941 bölüm (chapter), 10.000 sayfa, 99.394 chunk. Kitapların %10'u iki rafta, %3'ü hiçbir rafta değil; sayfaların ~%80'i bir bölümde. Her sayfada 5 başlık × 70 kelime ve **aynı cümle kalıbında** tek bir ayırt edici bilgi var (`<KOD> sisteminin yedekleme sorumlusu <kişi>`). Yani 10.000 sayfanın hepsi soruyla aynı kelimeleri taşıyor; doğru sayfayı yalnız kod ayırıyor. Raf, kitap, bölüm ve sayfa başlığı adları sayfa gövdesinde **hiç geçmiyor**, böylece bu adlarla gelen bir isabet yalnız hiyerarşi metadatasından gelebilir.
+Sentetik ama BookStack yapısında: 60 raf, 1.000 kitap, 1.941 bölüm (chapter), 10.000 sayfa, ~100.000 chunk. Kitapların %10'u iki rafta, %3'ü hiçbir rafta değil; sayfaların ~%80'i bir bölümde.
 
-Gömme: `hash-bow` (deterministik, anlamsal değil). Bu yüzden "yalnız vektör" sütunu anlamsal kaliteyi ölçmez; aşağıdaki bulgular gömmeden bağımsız olan indeks, FTS, ACL, katalog ve hiyerarşi mekaniği içindir. Üretimdeki Gemini gömmesiyle anlamsal kalite ayrıca ölçülmelidir.
+Her sayfada 5 başlık × 70 kelime ve **aynı cümle kalıbında** tek bir ayırt edici bilgi var (`<KOD> sisteminin yedekleme sorumlusu <kişi>`). Yani 10.000 sayfanın hepsi soruyla aynı kelimeleri taşıyor; doğru sayfayı yalnız kod ayırıyor.
 
-## A. 1000 kitap / 10.000 sayfada RAG doğru çalışıyor mu?
+Raf, kitap, bölüm ve sayfa başlığı adları sayfa gövdesinde **hiç geçmiyor**, dolayısıyla bu adlarla gelen bir isabet yalnız hiyerarşi bilgisinden gelebilir. Hiyerarşi testinde aynı bilgi ("seyahat avansı onay limiti") dört farklı bölüm, kitap ve raftaki dört sayfada farklı değerlerle duruyor; doğru sayfayı yalnız soruda adı geçen kap ayırabilir.
 
-### Sonuç tablosu
+Gömme: `hash-bow` (deterministik, anlamsal değil). "Yalnız vektör" sütunu ve top-1 sıralaması bu yüzden anlamsal kaliteyi ölçmez. Bulgular gömmeden bağımsız mekaniği ölçer: indeks, FTS, ACL, katalog ve hiyerarşi. Üretimdeki Gemini gömmesiyle anlamsal kalite ayrıca ölçülmelidir.
 
-| Sayfa | Chunk | Recall@8 | Recall@1 | Yalnız FTS R@8 | Arama p50 | p95 | p99 |
-|---|---|---|---|---|---|---|---|
-| 1.000 | 9.952 | 1.00 | 0.015 | 1.00 | 10 ms | 14 ms | 16 ms |
-| 2.500 | 24.854 | 1.00 | 0.005 | 1.00 | 20 ms | 26 ms | 79 ms |
-| 5.000 | 49.703 | 0.985 | 0.00 | 0.985 | 33 ms | 81 ms | 97 ms |
-| 10.000 | 99.394 | 0.99 | 0.00 | 0.99 | 66 ms | 131 ms | 154 ms |
+## A. 1.000 kitap / 10.000 sayfada ölçek
 
-| İndekslenen sayfa | 1.000 | 2.000 | 4.000 | 6.000 | 8.000 | 10.000 |
-|---|---|---|---|---|---|---|
-| ms / sayfa (embedding hariç) | 65 | 80 | 116 | 152 | 188 | 230 |
+| Ölçüm (10.000 sayfa) | Önce | Sonra |
+|---|---|---|
+| İndeksleme, sayfa başına (embedding hariç) | 65 ms → **230 ms** (büyüdükçe artıyor) | 54 ms → **62 ms** (sabit) |
+| Toplam indeksleme | 24,1 dk | **9,8 dk** |
+| Dolu indekste tek sayfa güncelleme (p50) | 251 ms | **75 ms** |
+| Recall@8 (200 kod sorusu) | 0,99 | **1,00** |
+| Arama p50 / p95 / p99 (admin) | 66 / 131 / 154 ms | **28 / 36 / 39 ms** |
+| Kısıtlı kullanıcı, 1.000 izinli sayfa (p50) | 455 ms | **80 ms** |
+| Kısıtlı kullanıcı, 3.000 izinli sayfa (p50) | 1.281 ms | **62 ms** |
+| Kısıtlı kullanıcı, 8.000 izinli sayfa (p50) | 3.049 ms | **68 ms** |
+| Kısıtlı kullanıcı, 50–200 izinli sayfa (p50) | 109–114 ms | 94–98 ms |
+| 10 eşzamanlı sorgu: sorgu/s, p50 | 13,6 /s, 694 ms | **97 /s, 80 ms** |
+| İzinsiz sayfa sızıntısı | 0 | 0 |
+| Katalog sayıları (sayfa/kitap/raf) | doğru | doğru (+ bölüm sayısı) |
 
-| Kısıtlı kullanıcının izinli sayfası | 50 | 200 | 1.000 | 3.000 | 8.000 |
-|---|---|---|---|---|---|
-| ACL partisi (200'lük) | 1 | 1 | 5 | 15 | 40 |
-| Arama p50 | 109 ms | 114 ms | 455 ms | 1.281 ms | 3.049 ms |
-| İzinsiz sayfa sızıntısı | 0 | 0 | 0 | 0 | 0 |
+Yapılan düzeltmeler:
 
-Diğer ölçümler (10.000 sayfada):
-
-- 10 eşzamanlı sorgu (admin): 13,6 sorgu/s, p50 694 ms, p95 1.204 ms, 0 hata.
-- Dolu indekste içerik güncellemesi: upsert p50 251 ms; eski bilgi FTS'ten tamamen silindi, yeni bilgi 30/30 bulundu.
-- Katalog: sayfa 10.000/10.000, kitap 1.000/1.000, raf 60/60 doğru; 3.000 sayfalık kısıtlı kullanıcıda da kitap/raf sayıları doğru.
-- Depolama: SQLite 251 MB, Chroma 369 MB.
-
-### Değerlendirme
-
-**Doğruluk ve güvenlik ölçekte korunuyor.** İzinsiz sayfa sızıntısı hiçbir boyutta yok, katalog sayıları kesin, güncelleme sonrası eski revizyon geri gelmiyor. Doğru sayfa 10.000 sayfada da %99 oranla ilk 8 pasajda.
-
-**Ama beş ölçek sorunu var:**
-
-1. **İndeksleme karesel yavaşlıyor (O(N²)).** Sayfa başı süre 65 ms'den 230 ms'ye doğrusal artıyor; toplam 10.000 sayfa embedding hariç 24 dakika. 10.000 sayfalık indekste tek bir upsert 310 ms sürdü: `publish` 165 ms, Chroma ekleme 56 ms, FTS yazma 46 ms, Chroma silme 33 ms. Ana neden: `store.publish` ve `tombstone` içindeki `DELETE FROM chunks_fts WHERE page_id = ?`. `page_id` FTS5 tablosunda `UNINDEXED` bir sütun; SQLite bunu indeksle bulamaz ve her yayında 100.000 satırlık FTS tablosunun tamamını tarar (`EXPLAIN QUERY PLAN` → `SCAN chunks_fts VIRTUAL TABLE INDEX 0`; 99.394 satırda tek tarama 41 ms). Çözüm: FTS satırlarını `rowid` üzerinden silmek (chunk_records'a fts rowid saklamak) veya `DELETE ... WHERE rowid IN (SELECT ...)` ile normal tablodan eşlemek. İlk tam senkronda Gemini embedding süresi buna eklenir.
-
-2. **Kısıtlı kullanıcıda arama süresi izinli sayfa sayısıyla doğrusal büyüyor.** İzin listesi 200'lük partilere bölünüyor ve her parti için ayrı bir Chroma sorgusu **ve** ayrı bir FTS sorgusu çalışıyor. 8.000 izinli sayfalı sıradan bir kullanıcı için 40+40 sorgu = 3 saniye; tek partide bile Chroma'nın `$in` filtreli sorgusu admin sorgusundan yavaş. 10.000 sayfalık bir kurulumda çoğu kullanıcı binlerce sayfa görür, yani bu **gerçek kullanıcı deneyimini belirleyen yol**. Çözüm önerisi: izinli küme büyükse (ör. > %30 veya > 1.000 sayfa) filtresiz daha geniş bir top-k çekip sonucu Python'da ACL ile süzmek; FTS'te ise izin listesini geçici tabloya yazıp tek sorguda JOIN etmek.
-
-3. **Eşzamanlılık zayıf.** 10 eşzamanlı sorguda p50 66 ms'den 694 ms'ye çıkıyor. SQLite bağlantısı tek kilitle seri hale getiriliyor ve her arama `active_revision_map()` ile 10.000 satırın tamamını okuyor. Kısıtlı kullanıcılar ve gerçek embedding API gecikmesiyle bu daha da artar.
-
-4. **Füzyon kesin eşleşmeyi aşağı itiyor (Recall@1 ≈ 0).** Reciprocal rank fusion'da FTS'te 1. sıradaki tek-kanal aday 1/61 puan alır; iki kanalda da 8. sırada olan zayıf bir aday 2/68 alır ve öne geçer. Hash gömme bu etkiyi abartıyor, fakat kodlar, sürüm numaraları, kişi adları gibi kesin eşleşme gereken sorularda Gemini ile de aynı mekanizma çalışır. 5.000 sayfadan sonra görülen %1–1,5'lik kayıp ise ayrı bir nedenden: incelenen kaçırmalarda parçalayıcı cümleyi ortasından bölmüştü (`_split_oversized` kelime düzeyinde keser). Kod bir chunk'ın sonunda, "yedekleme sorumlusu" sonraki chunk'ta kalıyor. Kalıbı taşıyan çok kısa artık chunk'lar bm25 uzunluk normalizasyonu sayesinde hep aynı yüksek puanı (−9,24) alıp ilk 12 sırayı dolduruyor ve kodu taşıyan chunk dışarıda kalıyor. Sayfa sayısı arttıkça bu kısa chunk'lardan daha çok oluyor. Öneri: kanal ağırlıklı RRF veya FTS'te çok nadir bir terimle eşleşen chunk'a taban puan; ayrıca aday havuzunu `limit`'ten geniş çekip sonra kesmek.
-
-5. **Her aramada `get_page_state` aday başına ayrı sorgu** — şu an küçük ama eşzamanlılıkta kilit süresini uzatıyor.
+1. **Karesel indeksleme.** `page_id` FTS5'te indekslenmeyen bir sütun; `DELETE FROM chunks_fts WHERE page_id = ?` her yayında 100.000 satırın tamamını tarıyordu (tek tarama 41 ms, bir upsert'in 165/310 ms'si). FTS satırları artık `chunk_records.fts_rowid` üzerinden rowid ile siliniyor. `chunk_records` ve `parent_records` tablolarına `(page_id, revision_id)` ve `revision_id` indeksleri eklendi.
+2. **ACL partileri.** İzin listesi FTS'e ve katalog sorgularına tek JSON parametresi (`json_each`) olarak gidiyor; önceden 200 sayfalık her parti için ayrı bir FTS ve ayrı bir Chroma sorgusu çalışıyordu. Chroma'da izinli küme 200 sayfadan büyükse filtresiz, daha geniş bir aday listesi çekilip izne göre süzülüyor (filtreli `$in` 8.000 sayfada 835 ms, filtresiz 200 aday 36 ms). Yetmezse tek bir `$in` sorgusuna düşülüyor. 50–200 sayfalık küçük kümeler hâlâ Chroma'nın filtreli sorgusunu kullanıyor (~95 ms); bu Chroma'nın `$in` maliyeti.
+3. **Arama sorguları.** Her aramada 10.000 satırlık `active_revision_map` okuması ve aday başına `get_page_state` sorgusu kalktı; adaylar tek bir birleştirme sorgusuyla geliyor. Birleştirme sırası sabitlendi, çünkü yeni indeks planlayıcıyı `page_state` taramasına yönlendirip sorguyu 0,1 ms'den 50 ms'ye çıkarıyordu. Admin aramasında FTS önce kendi içinde sıralanıyor, sonra yalnız ilk adaylar birleştiriliyor. Chroma'daki sorgu başına `count()` çağrısı kaldırıldı.
+4. **Eşzamanlılık.** Arama sorguları iş parçacığı başına salt okunur bir SQLite bağlantısı kullanıyor; WAL okuyucuları yazar kilidini beklemiyor.
+5. **Kaybolan kesin eşleşmeler.** Parçalayıcı cümleyi kelime ortasından bölüyordu; kod bir chunk'ta, "yedekleme sorumlusu" sonrakinde kalıyordu. Artık cümle sınırında bölüyor. Yalnız sınırı aşan tek bir cümle kelime düzeyinde kesiliyor ve kalan kısa kuyruk sonraki cümleyle birleşiyor. RRF sonrası her kanalın ilk iki adayı sonuçta tutuluyor, böylece kesin bir FTS eşleşmesi iki kanalda da orta sıradaki adaylarca dışarı itilmiyor.
 
 ## B. RAG rafları ve bölümleri algılıyor mu?
 
-**Kısa cevap: hayır.** Sayılar dışında hiyerarşi bilgisi aramaya ve yanıt modeline ulaşmıyor.
-
-| Test (10.000 sayfa) | Sonuç | Rastgele tahmin |
+| Test (10.000 sayfa) | Önce | Sonra |
 |---|---|---|
-| Aynı bilgi 4 sayfada farklı değerle; soru **bölüm** adını veriyor → doğru sayfa 1. sırada | %1,9 | %25 |
-| Aynı test, **kitap** adıyla | %0 | %25 |
-| Aynı test, **raf** adıyla | %1,9 | %25 |
-| "`<sayfa başlığı>` sayfasında ne anlatılıyor?" → sayfa ilk 8'de | %0 | — |
-| "`<raf>` içinde hangi kitaplar var?" → dönen sayfaların o rafta olma oranı | %2,2 | — |
-| "`<kitap>` kitabında hangi sayfalar var?" | %0 | — |
-| "`<bölüm>` bölümündeki sayfalar neler?" | %0 | — |
+| Aynı bilgi 4 sayfada; soru **bölüm** adını veriyor → doğru sayfa ilk 8'de | %23 | **%100** |
+| … ve model adı `chapter` filtresi olarak da veriyor → doğru sayfa 1. sırada | — | **%96** |
+| Aynı test, **kitap** adıyla (filtreli) → 1. sırada | %0 | **%92** (ilk 8'de %100) |
+| Aynı test, **raf** adıyla (filtreli) → 1. sırada | %2 | %49 (ilk 8'de %100) |
+| "`<sayfa başlığı>` sayfasında ne anlatılıyor?" → sayfa ilk 8'de | %0 | **%99,5** |
+| Raf listesi | araç yok | **60/60, tam** |
+| Bir raftaki kitaplar / bir kitaptaki bölümler / bir kitaptaki ve bölümdeki sayfalar | araç yok | **%100 tam** (küçük harf, Türkçe karaktersiz adla da) |
+| Bölüm sayısı | dönmüyordu | 1.835/1.835 |
+| Pasajlarda raf/kitap/bölüm | yok | var; kanıt hakemi konumu görüyor |
+| Kısıtlı kullanıcıya gizli raf adının sızması | — | sızmıyor (listede de, öneride de) |
 
-Nedenleri koddan doğrulandı:
+Raf filtresinde top-1'in %49'da kalmasının nedeni şu: filtre aramayı o rafın ~170 sayfasına daraltıyor ve doğru sayfa her zaman ilk 8'de. İlk sırayı ise anlamsal olmayan `hash-bow` vektör kanalı karıştırıyor. Kanıt hakemi pasajları konumlarıyla gördüğü için ilk 8'de olmak yeterli; gerçek gömmeyle top-1 ayrıca ölçülmeli.
 
-1. **Hiyerarşi adları indekslenmiyor.** Gömme metni yalnız `başlık + chunk` (`chunking._embed_text`), FTS gövdesi yalnız `heading + body` (`store.write_fts`). Sayfa adı, kitap, bölüm ve raf adları ikisinde de yok. Chroma metadatasında `book_name` ve `shelf_name` var ama filtre olarak kullanılmıyor; `chapter_name` hiç yazılmıyor.
-2. **Yanıt modeli hiyerarşiyi görmüyor.** `serialize_passages` yalnız `chunk_id, page_id, revision_id, title, url, heading, text` döndürüyor. Model "bu bilgi X rafındaki Y kitabının Z bölümünde" diyemez, aynı bilginin farklı bölümlerdeki sürümlerini ayırt edemez.
-3. **Katalog araçları yalnız sayıyor.** `catalog_counts` sayfa/kitap/raf sayısını doğru veriyor, `catalog_list_books` kitapları listeliyor. Ama rafları listeleyen, bir raftaki kitapları, bir kitaptaki bölümleri/sayfaları veya bölüm sayısını veren araç yok. Bu sorular `document_search`'e düşüyor ve yukarıdaki tablo gibi rastgele sonuç veriyor.
-4. **Bölüm değişiklikleri takip edilmiyor.** Webhook `chapter_update`/`chapter_move` olaylarını yok sayıyor; `bookshelf_update` da yok sayılıyor. Bölüm adı değişince sayfalar tam uzlaştırmaya kadar eski adı taşır.
+Yapılan değişiklikler:
 
-## Önerilen düzeltmeler (öncelik sırasıyla)
+1. **Hiyerarşi indekste.** FTS'e `title` ve `location` (raflar, kitap, bölüm) sütunları eklendi (bm25 ağırlıkları gövde 1,0 / başlık 1,5 / konum 1,0). Gömme metnine `Kitap › Bölüm › Sayfa` öneki eklendi. Raflar gömmeye girmiyor, çünkü bir kitap birden çok rafta olabilir ve raf üyeliği sık değişir. Chroma metadatasına `book_id`, `chapter_id` ve `chapter_name` eklendi. Şema `pc-v3`.
+2. **Pasajlarda konum.** `book_name`, `chapter_name` ve `shelf_names` yanıt modeline gidiyor. Kanıt hakemi her pasajı `raf › kitap › bölüm › sayfa` konumuyla görüyor ve soruda adı geçen konumu tercih ediyor.
+3. **Katalog araçları.** `catalog_browse` rafları, kitapları, bölümleri veya sayfaları sayfalı olarak (`has_more` ile) listeliyor; raf/kitap/bölüm filtresi alıyor. `catalog_counts` bölüm sayısını da veriyor ve filtre alıyor.
+4. **Filtreli arama.** `document_search` isteğe bağlı `shelf`, `book` ve `chapter` alıyor. Ad eşleşirse arama o kapla sınırlanıyor; eşleşmezse sınırlama yapılmıyor ve durum `container.status` alanında bildiriliyor. Takip araması da aynı kapla sınırlı kalıyor.
+5. **Ad eşleştirme.** Büyük/küçük harf ve Türkçe karakter farkı yok sayılıyor ("bt el kitabi" → "BT El Kitabı"). Sorgunun her kelimesi addaki bir kelimeyle eşleşmeli. Kısmi eşleşme ("Finans Bursa Rafı" → "Finans Ankara Rafı") sessizce uygulanmıyor; öneri olarak dönüyor, model de kullanıcıya soruyor. Adlar yalnız kullanıcının erişebildiği sayfaların kaplarından çözülüyor.
+6. **Değişiklik takibi.** Webhook artık `page_move`, `chapter_*`, `bookshelf_*` ve `book_delete` olaylarını işliyor. Sayfa, kitap veya bölüm adı değişirse sayfa yeniden gömülüyor; yalnız raf, etiket veya URL değişirse etiketler yerinde güncelleniyor. Kitap, bölüm ve raf işleri kuyrukta ayrı negatif anahtar kullanıyor. Önceden `book_update` kitap kimliğini sayfa kimliği gibi kuyruğa yazıyordu, bu yüzden 5 numaralı kitabın güncellemesi 5 numaralı sayfanın bekleyen işini iptal edebiliyordu.
 
-1. FTS silmelerini `rowid` tabanlı yapmak (indekslemenin karesel yavaşlaması).
-2. Büyük ACL kümelerinde parti başına sorgu yerine geniş sorgu + sonradan süzme; FTS'te tek sorgu.
-3. Hiyerarşiyi indekse eklemek: FTS'e ayrı `title`, `book`, `chapter`, `shelf` sütunları (bm25 ağırlıklı), gömme metnine kısa bir `Kitap › Bölüm › Sayfa` önekini bütçe içinde eklemek, Chroma metadatasına `chapter_name`/`book_id`/`chapter_id` yazmak. Bu şema değişikliği yeni bir koleksiyon sürümü ve yeniden indeksleme gerektirir.
-4. Pasajlara `book_name`, `chapter_name`, `shelf_names` eklemek, böylece yanıt modeli kaynağı konumuyla söyleyebilir.
-5. Katalog araçlarını genişletmek: `catalog_list_shelves`, `catalog_list_books(shelf=…)`, `catalog_list_chapters(book=…)`, `catalog_list_pages(book|chapter=…)`, bölüm sayısı; ve `document_search`'e isteğe bağlı `book`/`chapter`/`shelf` kapsam filtresi (ACL ile kesişim).
-6. RRF'yi kesin eşleşmelerin kaybolmayacağı şekilde ayarlamak ve aday havuzunu genişletmek; parçalayıcıda cümle sınırında bölmek ve çok kısa artık chunk'ları öncekiyle birleştirmek.
-7. `chapter_update` webhook'unu `book_refresh` benzeri bir yeniden etiketleme işine bağlamak.
+## Geçiş
 
-Her düzeltmeden sonra aynı betik tekrar çalıştırılarak önce/sonra karşılaştırılabilir.
+- Şema `pc-v2` → `pc-v3`. İlk açılışta eski FTS tablosu yeni sütunlarla `chunk_records` üzerinden yeniden kuruluyor (10.000 sayfada birkaç saniye). Böylece yeniden indekslemeden önce de başlık ve konum aramada kullanılabiliyor.
+- Gömmelerin güncellenmesi için bir kez tam uzlaştırma çalıştırın: `POST /api/sync`. Şema sürümü farklı her sayfa yeniden parçalanıp gömülüyor. Koleksiyon adı değişmiyor.
+- BookStack'te webhook'u kitap, bölüm ve raf olaylarını da gönderecek şekilde genişletin (bkz. README).
+- `CHILD_CHUNK_TOKENS` varsayılanı 160'tan 140'a indi; gömme bütçesi (180) içinde konum önekine yer açmak için.
+
+## Bilinen sınırlar
+
+- Sonuçlar sentetik korpus ve `hash-bow` ile alındı. Gemini gömmesiyle anlamsal recall, top-1 sıralaması ve gerçek embedding API süresi ayrıca ölçülmeli. 10.000 sayfanın ilk tam indekslemesinde süreyi Gemini çağrıları belirleyecek.
+- 50–200 izinli sayfalı küçük kullanıcılar Chroma'nın filtreli sorgusunu kullanıyor (~95 ms).
+- Raf adı değişip aynı anda rafın kitap listesi de değişirse, kitap artık o rafta olmadığı ve eski ad API'den okunamadığı için eski raf etiketi bir sonraki `book_update` olayına kadar kalabilir.
