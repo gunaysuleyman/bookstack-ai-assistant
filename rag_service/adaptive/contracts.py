@@ -62,6 +62,9 @@ class RetrievalCandidate(BaseModel):
     text: str
     title: str = ""
     url: str = ""
+    book_name: str = ""
+    chapter_name: str = ""
+    shelf_names: List[str] = Field(default_factory=list)
     vector_rank: Optional[int] = None
     lexical_rank: Optional[int] = None
     fusion_score: float = 0.0

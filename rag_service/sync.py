@@ -85,6 +85,53 @@ class BookStackSync:
             logger.warning(f"Could not fetch chapter {chapter_id}: {e}")
         return f"Chapter #{chapter_id}"
 
+    def invalidate(self, book_id: Optional[int] = None, chapter_id: Optional[int] = None) -> None:
+        """Forget cached book or chapter labels after a change event."""
+        if book_id is not None:
+            self.book_cache.pop(int(book_id), None)
+        if chapter_id is not None:
+            self.chapter_cache.pop(int(chapter_id), None)
+
+    def _get_json(self, path: str) -> Optional[Dict[str, Any]]:
+        """GET an API object. 404 returns None; other failures raise SyncError."""
+        self._require_credentials()
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                res = client.get(f"{self.bookstack_url}{path}", headers=self._get_headers())
+        except Exception as exc:
+            raise SyncError(f"BookStack request {path} failed: {exc}") from exc
+        if res.status_code == 404:
+            return None
+        if res.status_code >= 400:
+            raise SyncError(f"BookStack request {path} failed with HTTP {res.status_code}")
+        return res.json()
+
+    def fetch_book_info(self, book_id: int) -> Optional[Dict[str, Any]]:
+        self.invalidate(book_id=book_id)
+        data = self._get_json(f"/api/books/{int(book_id)}")
+        if data is None:
+            return None
+        names = [str(shelf["name"]) for shelf in (data.get("shelves") or []) if isinstance(shelf, dict) and shelf.get("name")]
+        return {"book_name": data.get("name") or f"Book #{book_id}", "shelf_names": names}
+
+    def fetch_chapter_info(self, chapter_id: int) -> Optional[Dict[str, Any]]:
+        self.invalidate(chapter_id=chapter_id)
+        data = self._get_json(f"/api/chapters/{int(chapter_id)}")
+        if data is None:
+            return None
+        book_id = data.get("book_id")
+        if book_id:
+            self.invalidate(book_id=int(book_id))
+        pages = [int(page["id"]) for page in (data.get("pages") or []) if isinstance(page, dict) and page.get("id")]
+        return {"name": data.get("name") or "", "book_id": int(book_id or 0), "page_ids": pages}
+
+    def fetch_shelf_info(self, shelf_id: int) -> Optional[Dict[str, Any]]:
+        data = self._get_json(f"/api/shelves/{int(shelf_id)}")
+        if data is None:
+            return None
+        books = [int(book["id"]) for book in (data.get("books") or []) if isinstance(book, dict) and book.get("id")]
+        return {"name": data.get("name") or "", "book_ids": books}
+
     def load_page(self, page_id: int) -> Optional[PageDocument]:
         """Read one page. 404 returns None. Credential, HTTP, and network failures raise SyncError."""
         self._require_credentials()

@@ -68,7 +68,9 @@ Requirements: Docker with Compose, a BookStack API token for synchronization, an
 
    On Windows PowerShell, use `curl.exe` or `Invoke-RestMethod` instead of the `curl` alias if needed. Do not run a second writer process against the same Chroma volume.
 
-6. In BookStack, configure a webhook for page create/update/delete (and optionally book update). The container-to-container URL is `http://rag_service:8000/api/webhook?token=<WEBHOOK_SECRET>`. BookStack does not sign these webhook bodies; the secret in the URL must match `.env`. Do not reuse the service HMAC secret as the webhook secret.
+6. In BookStack, configure a webhook for page create/update/move/delete, and for book, chapter, and shelf create/update/move/delete so renamed or moved containers are re-labelled in the index. The container-to-container URL is `http://rag_service:8000/api/webhook?token=<WEBHOOK_SECRET>`. BookStack does not sign these webhook bodies; the secret in the URL must match `.env`. Do not reuse the service HMAC secret as the webhook secret.
+
+The index schema `pc-v3` adds page titles and shelf/book/chapter names to search. After upgrading from an earlier schema, run one full reconciliation (`POST /api/sync`); pages with an older schema are re-chunked and re-embedded. Until then, lexical search already uses the new title and location columns.
 
 No startup full sync runs automatically. If Adaptive indexing is enabled, `WEBHOOK_SECRET` must be nonempty or the service refuses to start. The service also refuses a missing or known example `RAG_SECRET_TOKEN`.
 

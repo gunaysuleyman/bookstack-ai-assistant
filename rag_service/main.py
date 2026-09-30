@@ -6,7 +6,6 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,7 +17,14 @@ from adaptive.contracts import AuthorizationScope
 from adaptive.embeddings import build_embedding
 from adaptive.engine import AdaptiveEngine
 from adaptive.indexer import Indexer
-from adaptive.jobs import apply_page_job, apply_reconcile
+from adaptive.jobs import (
+    apply_book_refresh,
+    apply_chapter_refresh,
+    apply_page_job,
+    apply_reconcile,
+    apply_shelf_refresh,
+    container_job_key,
+)
 from adaptive.store import StateStore
 from adaptive.vector_index import VectorIndex
 from adaptive.worker import IndexWorker
@@ -173,13 +179,36 @@ def _public_result(result: dict, payload: SearchQuery, history_dicts: List[dict]
     return body
 
 
+ADAPTIVE_JOB_EVENTS = {"page_upsert", "page_delete", "full_reconcile", "book_refresh", "chapter_refresh", "shelf_refresh"}
+
+
+def _enqueue_page(page_id: int) -> int:
+    return state_store.enqueue(int(page_id), "page_upsert", {"page_id": int(page_id)})
+
+
+def _enqueue_book(book_id: int) -> int:
+    return state_store.enqueue(container_job_key("book", book_id), "book_refresh", {"book_id": int(book_id)})
+
+
 def _handle_job(job) -> None:
-    if settings.adaptive_indexing and adaptive_indexer is not None and job.event in {"page_upsert", "page_delete", "full_reconcile", "book_refresh"}:
+    if settings.adaptive_indexing and adaptive_indexer is not None and job.event in ADAPTIVE_JOB_EVENTS:
         if job.event in {"page_upsert", "page_delete"}:
             apply_page_job(job, adaptive_indexer, sync_engine.load_page, legacy=sync_engine)
             return
         if job.event == "full_reconcile":
             apply_reconcile(state_store, adaptive_indexer, sync_engine.load_page, sync_engine.list_page_stubs, legacy=sync_engine)
+            return
+        if job.event == "chapter_refresh":
+            chapter_id = job.payload.get("chapter_id")
+            if chapter_id:
+                apply_chapter_refresh(state_store, int(chapter_id), sync_engine.fetch_chapter_info, _enqueue_page)
+            return
+        if job.event == "shelf_refresh":
+            shelf_id = job.payload.get("shelf_id")
+            if shelf_id:
+                apply_shelf_refresh(
+                    state_store, int(shelf_id), str(job.payload.get("shelf_name") or ""), sync_engine.fetch_shelf_info, _enqueue_book
+                )
             return
         book_id = job.payload.get("book_id")
         if book_id:
@@ -198,20 +227,19 @@ def _handle_job(job) -> None:
 
 
 def _refresh_book(book_id: int) -> None:
-    sync_engine._require_credentials()
-    url = f"{sync_engine.bookstack_url}/api/books/{book_id}"
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(url, headers=sync_engine._get_headers())
-        response.raise_for_status()
-        data = response.json()
-    info = {
-        "book_name": data.get("name") or f"Book #{book_id}",
-        "shelf_names": [shelf.get("name") for shelf in (data.get("shelves") or []) if isinstance(shelf, dict) and shelf.get("name")],
-    }
-    shelf_name = " | ".join(info["shelf_names"]) if info["shelf_names"] else "General Shelf"
-    rag_engine.update_book_metadata(book_id, info["book_name"], shelf_name)
+    fetched: Dict[int, Optional[dict]] = {}
+
+    def fetch(item_id: int) -> Optional[dict]:
+        if item_id not in fetched:
+            fetched[item_id] = sync_engine.fetch_book_info(item_id)
+        return fetched[item_id]
+
+    info = fetch(book_id)
+    if info is not None:
+        shelf_name = " | ".join(info["shelf_names"]) if info["shelf_names"] else "General Shelf"
+        rag_engine.update_book_metadata(book_id, info["book_name"], shelf_name)
     if adaptive_indexer is not None:
-        state_store.relabel_book(book_id, info["book_name"], info["shelf_names"])
+        apply_book_refresh(state_store, book_id, fetch, _enqueue_page)
 
 
 @app.get("/health")
@@ -374,17 +402,32 @@ async def handle_webhook(request: Request, x_webhook_token: Optional[str] = Head
     event = data.get("event")
     related = data.get("related_item") or {}
     page_id = related.get("id")
-    if event in {"page_create", "page_update"} and page_id:
-        job_id = state_store.enqueue(int(page_id), "page_upsert", {"page_id": int(page_id)})
+    item_id = page_id
+    if event in {"page_create", "page_update", "page_move", "page_restore"} and item_id:
+        job_id = _enqueue_page(int(item_id))
         return {"status": "accepted", "job_id": job_id}
-    if event == "page_delete" and page_id:
-        job_id = state_store.enqueue(int(page_id), "page_delete", {"page_id": int(page_id)})
+    if event == "page_delete" and item_id:
+        job_id = state_store.enqueue(int(item_id), "page_delete", {"page_id": int(item_id)})
         return {"status": "accepted", "job_id": job_id}
-    if event == "book_update" and page_id:
-        job_id = state_store.enqueue(int(page_id), "book_refresh", {"book_id": int(page_id)})
+    if event in {"book_update", "book_delete"} and item_id:
+        job_id = _enqueue_book(int(item_id))
         return {"status": "accepted", "job_id": job_id}
-    if event == "bookshelf_update":
-        return {"status": "ignored", "reason": "Shelf membership is applied on book_update or full reconciliation"}
+    if event in {"chapter_create", "chapter_update", "chapter_move", "chapter_delete"} and item_id:
+        if not settings.adaptive_indexing:
+            return {"status": "ignored", "reason": "Chapter changes are tracked by the adaptive index"}
+        job_id = state_store.enqueue(
+            container_job_key("chapter", int(item_id)), "chapter_refresh", {"chapter_id": int(item_id)}
+        )
+        return {"status": "accepted", "job_id": job_id}
+    if event in {"bookshelf_create", "bookshelf_update", "bookshelf_delete"} and item_id:
+        if not settings.adaptive_indexing:
+            return {"status": "ignored", "reason": "Shelf changes are tracked by the adaptive index"}
+        job_id = state_store.enqueue(
+            container_job_key("shelf", int(item_id)),
+            "shelf_refresh",
+            {"shelf_id": int(item_id), "shelf_name": str(related.get("name") or "")},
+        )
+        return {"status": "accepted", "job_id": job_id}
     return {"status": "ignored", "reason": "Unhandled event"}
 
 

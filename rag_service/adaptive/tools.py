@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
+from adaptive.catalog import real_name, real_shelves, resolve_filter
 from adaptive.contracts import AuthorizationScope, RetrievalCandidate
 from adaptive.hybrid import HybridSearcher, dedupe_candidates
 from adaptive.router import fold
@@ -19,6 +20,7 @@ TOOL_NAMES = (
     "document_search",
     "catalog_counts",
     "catalog_list_books",
+    "catalog_browse",
     "calculator",
 )
 ROUTE_INTENTS = (
@@ -36,7 +38,7 @@ INTENT_TOOL = {
     "current_page_detail": "search_current_page",
     "current_page_summary": "summarize_current_page",
     "catalog_count": "catalog_counts",
-    "catalog_list": "catalog_list_books",
+    "catalog_list": "catalog_browse",
     "calculate": "calculator",
     "greeting": "",
     "clarify": "",
@@ -52,6 +54,8 @@ INTENT_SCOPE = {
     "clarify": "library",
 }
 TOOL_INTENT = {tool: intent for intent, tool in INTENT_TOOL.items() if tool}
+TOOL_INTENT["catalog_list_books"] = "catalog_list"
+CATALOG_LEVELS = ("shelves", "books", "chapters", "pages")
 MAX_TOOL_CALLS = 2
 SEARCH_TOOL_NAMES = {"document_search", "search_current_page"}
 MAX_EXPRESSION_CHARS = 120
@@ -71,12 +75,31 @@ ALLOWED_OPERATORS = {
 }
 
 
-class DocumentSearchArgs(BaseModel):
+class ContainerArgs(BaseModel):
+    shelf: str = Field(default="", max_length=200)
+    book: str = Field(default="", max_length=200)
+    chapter: str = Field(default="", max_length=200)
+
+    def any_container(self) -> bool:
+        return bool(self.shelf.strip() or self.book.strip() or self.chapter.strip())
+
+
+class DocumentSearchArgs(ContainerArgs):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=8, ge=1, le=20)
 
 
 class CatalogListBooksArgs(BaseModel):
+    offset: int = Field(default=0, ge=0, le=100000)
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+class CatalogCountArgs(ContainerArgs):
+    pass
+
+
+class CatalogBrowseArgs(ContainerArgs):
+    level: Literal["shelves", "books", "chapters", "pages"] = "books"
     offset: int = Field(default=0, ge=0, le=100000)
     limit: int = Field(default=20, ge=1, le=50)
 
@@ -101,6 +124,10 @@ class RouteArgs(BaseModel):
     expression: str = Field(default="", max_length=MAX_EXPRESSION_CHARS)
     offset: int = Field(default=0, ge=0, le=100000)
     limit: int = Field(default=8, ge=1, le=50)
+    level: Optional[Literal["shelves", "books", "chapters", "pages"]] = None
+    shelf: str = Field(default="", max_length=200)
+    book: str = Field(default="", max_length=200)
+    chapter: str = Field(default="", max_length=200)
 
 
 FUNCTION_DECLARATIONS = [
@@ -109,11 +136,16 @@ FUNCTION_DECLARATIONS = [
         "description": (
             "Choose how to answer. Call this once. Decide from the user's meaning, including misspellings, "
             "missing letters, short phrases, inverted wording, and mixed languages. "
-            "document: a documentation question. "
+            "The library is organized as shelves > books > chapters > pages. "
+            "document: a documentation question. When the user names a shelf, book, or chapter, "
+            "also pass that name in shelf, book, or chapter to focus the search there. "
             "current_page_detail: a specific fact or procedure on the open page. "
             "current_page_summary: an overall summary of the open page. "
-            "catalog_count: how many books, pages, or shelves the user can access. "
-            "catalog_list: one page of accessible books. "
+            "catalog_count: how many shelves, books, chapters, or pages the user can access, "
+            "optionally inside a named shelf, book, or chapter. "
+            "catalog_list: browse the accessible catalog. Set level to shelves, books, chapters, or pages, "
+            "and pass shelf, book, or chapter to list only what is inside it "
+            "(for example books on a shelf, chapters of a book, pages of a chapter). "
             "calculate: arithmetic. "
             "greeting: a greeting or small talk. "
             "clarify: the request is genuinely ambiguous. "
@@ -131,6 +163,10 @@ FUNCTION_DECLARATIONS = [
                 "expression": {"type": "string", "description": "Arithmetic expression when intent is calculate."},
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "level": {"type": "string", "enum": list(CATALOG_LEVELS), "description": "What catalog_list lists."},
+                "shelf": {"type": "string", "description": "Shelf name the user mentioned, if any."},
+                "book": {"type": "string", "description": "Book name the user mentioned, if any."},
+                "chapter": {"type": "string", "description": "Chapter name the user mentioned, if any."},
             },
             "required": ["intent"],
         },
@@ -167,6 +203,7 @@ FUNCTION_DECLARATIONS = [
         "description": (
             "Search indexed documentation the user can access. Use for procedures, contacts, policies, "
             "and content across the library when the question is not specifically about the open page. "
+            "Pass shelf, book, or chapter when the user names one. "
             "Do not use this to summarize the open page."
         ),
         "parameters": {
@@ -174,21 +211,41 @@ FUNCTION_DECLARATIONS = [
             "properties": {
                 "query": {"type": "string", "description": "Search query in the user's language."},
                 "limit": {"type": "integer", "description": "Maximum passages to return.", "minimum": 1, "maximum": 20},
+                "shelf": {"type": "string"},
+                "book": {"type": "string"},
+                "chapter": {"type": "string"},
             },
             "required": ["query"],
         },
     },
     {
         "name": "catalog_counts",
-        "description": "Return exact counts of pages, books, and shelves the user can access.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "catalog_list_books",
-        "description": "List books the user can access with visible page counts.",
+        "description": (
+            "Return exact counts of shelves, books, chapters, and pages the user can access, "
+            "optionally inside a named shelf, book, or chapter."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
+                "shelf": {"type": "string"},
+                "book": {"type": "string"},
+                "chapter": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "catalog_browse",
+        "description": (
+            "List accessible shelves, books, chapters, or pages with counts, one page at a time. "
+            "Pass shelf, book, or chapter to list only what is inside that container."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "level": {"type": "string", "enum": list(CATALOG_LEVELS)},
+                "shelf": {"type": "string"},
+                "book": {"type": "string"},
+                "chapter": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50},
             },
@@ -256,14 +313,30 @@ def resolve_route(name: str, args: Optional[Dict[str, Any]], user_query: str) ->
 
 
 def _route_arguments(parsed: RouteArgs, user_query: str) -> Dict[str, Any]:
+    containers = {key: value.strip() for key, value in (("shelf", parsed.shelf), ("book", parsed.book), ("chapter", parsed.chapter)) if value.strip()}
     if parsed.intent in {"document", "current_page_detail"}:
         query = (parsed.query or user_query or "").strip()[:2000]
-        return {"query": query, "limit": min(parsed.limit, 20)}
+        args = {"query": query, "limit": min(parsed.limit, 20)}
+        if parsed.intent == "document":
+            args.update(containers)
+        return args
     if parsed.intent == "catalog_list":
-        return {"offset": parsed.offset, "limit": parsed.limit}
+        level = parsed.level or _default_level(containers)
+        # RouteArgs.limit defaults to a search size; a listing uses its own default.
+        limit = parsed.limit if "limit" in parsed.model_fields_set else CatalogBrowseArgs().limit
+        return {"level": level, "offset": parsed.offset, "limit": limit, **containers}
+    if parsed.intent == "catalog_count":
+        return dict(containers)
     if parsed.intent == "calculate":
         return {"expression": parsed.expression.strip()}
     return {}
+
+
+def _default_level(containers: Dict[str, str]) -> str:
+    """What to list when the model named a container but no level: its children."""
+    if "chapter" in containers or "book" in containers:
+        return "pages" if "chapter" in containers else "chapters"
+    return "books"
 
 
 def _rejected(intent: str, tool: str, scope: str, reason: str) -> Dict[str, Any]:
@@ -282,6 +355,7 @@ def compact_catalog_counts(raw: Dict[str, Any]) -> Dict[str, int]:
     return {
         "pages": int(raw.get("pages") or 0),
         "books": int(raw.get("books") or 0),
+        "chapters": int(raw.get("chapters") or 0),
         "shelves": len(shelves) if isinstance(shelves, list) else int(shelves or 0),
     }
 
@@ -305,11 +379,21 @@ def serialize_passages(selected: List[RetrievalCandidate], max_tokens: int = 220
                 "revision_id": item.revision_id,
                 "title": item.title,
                 "url": item.url,
+                "book_name": item.book_name,
+                "chapter_name": item.chapter_name,
+                "shelf_names": list(item.shelf_names),
                 "heading": item.heading,
                 "text": text,
             }
         )
     return rows
+
+
+def passage_location(passage: Dict[str, Any]) -> str:
+    """Shelves › Book › Chapter › Page title, for prompts."""
+    shelves = " | ".join(passage.get("shelf_names") or [])
+    parts = [shelves, passage.get("book_name") or "", passage.get("chapter_name") or "", passage.get("title") or ""]
+    return " › ".join(str(part) for part in parts if part)
 
 
 class ToolRegistry:
@@ -338,11 +422,13 @@ class ToolRegistry:
             if name == "document_search":
                 return self._document_search(DocumentSearchArgs.model_validate(args or {}), scope)
             if name == "catalog_counts":
-                return {"ok": True, **compact_catalog_counts(self.store.catalog_counts(allowed))}
+                return self._catalog_counts(CatalogCountArgs.model_validate(args or {}), allowed)
             if name == "catalog_list_books":
                 parsed = CatalogListBooksArgs.model_validate(args or {})
                 books = self.store.catalog_books(allowed, parsed.offset, parsed.limit)
                 return {"ok": True, "offset": parsed.offset, "limit": parsed.limit, "books": books}
+            if name == "catalog_browse":
+                return self._catalog_browse(CatalogBrowseArgs.model_validate(args or {}), allowed)
             parsed = CalculatorArgs.model_validate(args or {})
             return {"ok": True, "expression": parsed.expression, "result": safe_calculate(parsed.expression)}
         except ValidationError:
@@ -380,12 +466,63 @@ class ToolRegistry:
             "section_count": len(sections),
         }
 
+    def _catalog_counts(self, parsed: CatalogCountArgs, allowed: Optional[List[int]]) -> Dict[str, Any]:
+        resolved = resolve_filter(self.store, allowed, parsed.shelf, parsed.book, parsed.chapter)
+        if resolved.unmatched:
+            return {"ok": True, "pages": 0, "books": 0, "chapters": 0, "shelves": 0, "filter_status": "no_match", **resolved.report()}
+        counts = compact_catalog_counts(self.store.catalog_counts(allowed, resolved.filter if resolved.requested() else None))
+        return {"ok": True, **counts, **resolved.report()}
+
+    def _catalog_browse(self, parsed: CatalogBrowseArgs, allowed: Optional[List[int]]) -> Dict[str, Any]:
+        resolved = resolve_filter(self.store, allowed, parsed.shelf, parsed.book, parsed.chapter)
+        base = {"ok": True, "level": parsed.level, "offset": parsed.offset, "limit": parsed.limit}
+        if resolved.unmatched:
+            return {**base, "total": 0, "items": [], "filter_status": "no_match", **resolved.report()}
+        flt = resolved.filter if resolved.requested() else None
+        fetch = {
+            "shelves": self.store.catalog_shelf_page,
+            "books": self.store.catalog_book_page,
+            "chapters": self.store.catalog_chapter_page,
+            "pages": self.store.catalog_page_page,
+        }[parsed.level]
+        page = fetch(allowed, parsed.offset, parsed.limit, flt)
+        if parsed.level == "books":
+            for item in page["items"]:
+                item["book_name"] = real_name(item["book_name"]) or item["book_name"]
+                item["shelf_names"] = real_shelves(item["shelf_names"])
+        result = {**base, **page, **resolved.report()}
+        result["has_more"] = parsed.offset + len(page["items"]) < int(page.get("total") or 0)
+        return result
+
     def _document_search(self, parsed: DocumentSearchArgs, scope: AuthorizationScope) -> Dict[str, Any]:
         cap = max(1, int(self.settings.max_tool_result_passages))
         limit = min(parsed.limit, cap, self.settings.max_candidates)
-        found = self.searcher.search(parsed.query, scope, limit)
+        search_scope = scope
+        container: Dict[str, Any] = {}
+        if parsed.any_container():
+            allowed = allowed_page_ids(scope)
+            resolved = resolve_filter(self.store, allowed, parsed.shelf, parsed.book, parsed.chapter)
+            container = resolved.report()
+            # Unmatched names are reported, not applied: the search still runs
+            # over the named containers that did match, or the whole library.
+            if resolved.filter.active():
+                page_ids = self.store.catalog_page_ids(allowed, resolved.filter)
+                if page_ids:
+                    search_scope = scope.model_copy(update={"is_admin": False, "allowed_page_ids": page_ids})
+                    container["status"] = "applied"
+                else:
+                    container["status"] = "empty"
+            else:
+                container["status"] = "unmatched"
+        found = self.searcher.search(parsed.query, search_scope, limit)
+        if not found and container.get("status") == "applied":
+            found = self.searcher.search(parsed.query, scope, limit)
+            container["status"] = "no_results_in_container"
         selected = [item for item in dedupe_candidates(found) if scope.allows(item.page_id)][:limit]
-        return {"ok": True, "query": parsed.query, "passages": serialize_passages(selected)}
+        result = {"ok": True, "query": parsed.query, "passages": serialize_passages(selected)}
+        if container:
+            result["container"] = container
+        return result
 
     def _search_current_page(
         self, parsed: DocumentSearchArgs, scope: AuthorizationScope, current_page: Optional[Dict[str, Any]]
@@ -399,6 +536,7 @@ class ToolRegistry:
         if state is None or state["status"] != "published" or not state["active_revision"]:
             return {"ok": False, "error": "not_found"}
         page_scope = scope.model_copy(update={"is_admin": False, "allowed_page_ids": [page_id]})
+        parsed = parsed.model_copy(update={"shelf": "", "book": "", "chapter": ""})
         result = self._document_search(parsed, page_scope)
         result["page_id"] = page_id
         return result
@@ -441,6 +579,8 @@ EVIDENCE_JUDGE_INSTRUCTION = (
     "even though it does not state the exact fact asked: it is useful partial evidence, so use coverage partial "
     "and keep the need in unmet_needs unless the passage states the exact fact. "
     "When separate_topics is false, choose ids from a single page_id: the one page that best answers the question (not necessarily the first listed).\n"
+    "Each passage has a location (shelf › book › chapter › page title). When the question or history names a shelf, "
+    "book, chapter, or page, a passage from a different location does not answer it; prefer the named location.\n"
 )
 def _content_tokens(text: str) -> set:
     return {fold(token) for token in _TOKEN.findall(text or "") if len(token) >= 4}
@@ -474,6 +614,7 @@ def evidence_judge_prompt(
                 {
                     "chunk_id": item.get("chunk_id"),
                     "page_id": item.get("page_id"),
+                    "location": passage_location(item),
                     "text": item.get("text") or "",
                 },
                 ensure_ascii=False,
@@ -580,9 +721,20 @@ def _verified_passage(row, state, max_tokens: int = 220) -> Optional[Dict[str, A
         "revision_id": str(row["revision_id"] or ""),
         "title": str(state["title"] or "") if state else "",
         "url": str(state["url"] or "") if state else "",
+        "book_name": real_name(state["book_name"]) if state else "",
+        "chapter_name": real_name(state["chapter_name"]) if state else "",
+        "shelf_names": real_shelves(state_shelves(state)) if state else [],
         "heading": str(row["heading"] or ""),
         "text": text,
     }
+
+
+def state_shelves(state) -> List[str]:
+    try:
+        names = json.loads(state["shelf_names"] or "[]")
+    except (TypeError, ValueError, IndexError, KeyError):
+        return []
+    return [str(name) for name in names] if isinstance(names, list) else []
 
 
 def _passage_lists(doc_steps: List[dict]) -> List[dict]:

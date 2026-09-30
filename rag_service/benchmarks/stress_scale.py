@@ -311,8 +311,8 @@ class Harness:
         self.searcher = HybridSearcher(self.store, self.vectors, acl_batch=self.settings.acl_batch)
         self.tools = ToolRegistry(self.store, self.searcher, self.settings)
 
-    def search(self, query: str, scope: AuthorizationScope, limit: int = 8) -> List[dict]:
-        result = self.tools.execute("document_search", {"query": query, "limit": limit}, scope)
+    def search(self, query: str, scope: AuthorizationScope, limit: int = 8, **containers) -> List[dict]:
+        result = self.tools.execute("document_search", {"query": query, "limit": limit, **containers}, scope)
         return result.get("passages") or []
 
 
@@ -464,13 +464,14 @@ def eval_catalog(h: Harness, lib: Library) -> dict:
         "books": {"got": counts.get("books"), "expected": expected_books},
         "shelves": {"got": counts.get("shelves"), "expected": len(expected_shelves)},
         "list_books_total": {"got": len(listed), "expected": expected_books, "calls_needed": calls, "seconds": round(list_s, 3)},
+        "chapters": {"got": counts.get("chapters"), "expected": sum(1 for ch in lib.chapters.values() if ch.page_ids)},
         "list_books_has_shelf_or_chapter_fields": any(("shelf" in k or "chapter" in k) for b in listed[:1] for k in b),
         "restricted_3000": {
             "books": {"got": restricted.get("books"), "expected": exp_restricted_books},
             "shelves": {"got": restricted.get("shelves"), "expected": exp_restricted_shelves},
             "latency_ms": round(restricted_ms, 1),
         },
-        "chapter_count_available": "chapters" in counts,
+        "chapter_count_available": "chapters" in counts and counts.get("chapters") == sum(1 for ch in lib.chapters.values() if ch.page_ids),
     }
 
 
@@ -479,23 +480,28 @@ def eval_hierarchy(h: Harness, lib: Library, samples: int, rng: random.Random) -
     out: Dict[str, dict] = {}
 
     # 1) Same fact on K pages; the question names the chapter/book/shelf that disambiguates it.
+    #    "text": the name is only in the question (tests indexed hierarchy).
+    #    "filter": the router also passes the name as a container argument.
     for level, label in (("chapter", "bölümünde"), ("book", "kitabında"), ("shelf", "rafında")):
-        correct = top8 = total = 0
-        for group in lib.ambiguous:
-            for member in group["members"]:
-                name = member[level]
-                query = f"{name} {label} {group['topic']} nedir?"
-                pages = _page_ids(h.search(query, scope))
-                total += 1
-                correct += bool(pages[:1] == [member["page_id"]])
-                top8 += member["page_id"] in pages
-        k = len(lib.ambiguous[0]["members"]) if lib.ambiguous else 1
-        out[f"disambiguate_by_{level}"] = {
-            "queries": total,
-            "top1_accuracy": round(correct / max(1, total), 3),
-            "in_top8": round(top8 / max(1, total), 3),
-            "random_baseline_top1": round(1 / k, 3),
-        }
+        for mode in ("text", "filter"):
+            correct = top8 = total = 0
+            for group in lib.ambiguous:
+                for member in group["members"]:
+                    name = member[level]
+                    query = f"{name} {label} {group['topic']} nedir?"
+                    extra = {level: name} if mode == "filter" else {}
+                    pages = _page_ids(h.search(query, scope, **extra))
+                    total += 1
+                    correct += bool(pages[:1] == [member["page_id"]])
+                    top8 += member["page_id"] in pages
+            k = len(lib.ambiguous[0]["members"]) if lib.ambiguous else 1
+            key = f"disambiguate_by_{level}" + ("" if mode == "text" else "_filter")
+            out[key] = {
+                "queries": total,
+                "top1_accuracy": round(correct / max(1, total), 3),
+                "in_top8": round(top8 / max(1, total), 3),
+                "random_baseline_top1": round(1 / k, 3),
+            }
 
     # 2) Page title questions. Titles never occur in the body.
     ids = rng.sample(sorted(lib.pages), k=min(samples, len(lib.pages)))
@@ -540,6 +546,9 @@ def eval_hierarchy(h: Harness, lib: Library, samples: int, rng: random.Random) -
             "member_coverage": round(statistics.mean(coverage), 3) if coverage else 0.0,
         }
 
+    # 3b) The same listings through catalog_browse: exact, complete answers.
+    out["browse"] = eval_browse(h, lib, samples, rng)
+
     # 4) What the answer model can see about hierarchy.
     passage = (h.search(f"{lib.needles[1]['code']} sisteminin yedekleme sorumlusu kim?", scope) or [{}])[0]
     out["passage_fields"] = sorted(passage.keys())
@@ -548,23 +557,88 @@ def eval_hierarchy(h: Harness, lib: Library, samples: int, rng: random.Random) -
     embed_text = str(chunk["embed_text"]) if chunk else ""
     page = lib.pages[int(passage.get("page_id", 1))]
     fts_row = h.store.conn.execute(
-        "SELECT body FROM chunks_fts WHERE chunk_id = ?", (passage.get("chunk_id", ""),)
+        "SELECT body, title, location FROM chunks_fts WHERE chunk_id = ?", (passage.get("chunk_id", ""),)
     ).fetchone()
-    fts_body = str(fts_row["body"]) if fts_row else ""
+    fts_body = "\n".join(str(fts_row[key] or "") for key in ("body", "title", "location")) if fts_row else ""
     out["indexed_text_contains"] = {
         "embedding": {k: v in embed_text for k, v in (("title", page.name), ("book", page.book_name), ("chapter", page.chapter_name), ("shelf", (page.shelf_names or [""])[0]))},
         "fts": {k: v in fts_body for k, v in (("title", page.name), ("book", page.book_name), ("chapter", page.chapter_name), ("shelf", (page.shelf_names or [""])[0]))},
     }
     tool_names = [decl["name"] for decl in FUNCTION_DECLARATIONS]
     out["catalog_tools"] = [n for n in tool_names if n.startswith("catalog")]
+    browse = next((decl for decl in FUNCTION_DECLARATIONS if decl["name"] == "catalog_browse"), None)
+    levels = set(((browse or {}).get("parameters", {}).get("properties", {}).get("level", {}) or {}).get("enum", []))
+    props = set((browse or {}).get("parameters", {}).get("properties", {}))
     out["missing_catalog_capabilities"] = [
         cap for cap, present in (
-            ("list_shelves", any("shelf" in n for n in tool_names)),
-            ("list_chapters", any("chapter" in n for n in tool_names)),
-            ("books_in_shelf", any("shelf" in n for n in tool_names)),
-            ("pages_in_book_or_chapter", any("pages" in n for n in tool_names)),
+            ("list_shelves", "shelves" in levels),
+            ("list_chapters", "chapters" in levels),
+            ("books_in_shelf", "books" in levels and "shelf" in props),
+            ("pages_in_book_or_chapter", "pages" in levels and {"book", "chapter"} <= props),
         ) if not present
     ]
+    return out
+
+
+def _browse_all(h: Harness, scope: AuthorizationScope, **args) -> dict:
+    items: List[dict] = []
+    offset = 0
+    calls = 0
+    while True:
+        result = h.tools.execute("catalog_browse", {**args, "offset": offset, "limit": 50}, scope)
+        calls += 1
+        if not result.get("ok"):
+            return {"items": items, "calls": calls, "error": result.get("error")}
+        items.extend(result.get("items") or [])
+        if not result.get("has_more"):
+            return {"items": items, "calls": calls, "result": result}
+        offset += 50
+
+
+def _fuzzy(name: str) -> str:
+    """How a user might type a name: lower case, ASCII only."""
+    table = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    return name.translate(table).lower()
+
+
+def eval_browse(h: Harness, lib: Library, samples: int, rng: random.Random) -> dict:
+    scope = admin_scope()
+    out: Dict[str, dict] = {}
+    shelves = _browse_all(h, scope, level="shelves")
+    expected_shelves = {name for b in lib.books.values() if b.page_ids for name in b.shelf_names}
+    out["list_shelves"] = {
+        "exact": {item["shelf_name"] for item in shelves["items"]} == expected_shelves,
+        "got": len(shelves["items"]), "expected": len(expected_shelves), "calls": shelves["calls"],
+    }
+    checks = {"books_in_shelf": [], "chapters_in_book": [], "pages_in_chapter": [], "pages_in_book": []}
+    for shelf in rng.sample([s for s in lib.shelves.values() if s.book_ids], k=min(10, len(lib.shelves))):
+        got = _browse_all(h, scope, level="books", shelf=_fuzzy(shelf.name))
+        expected = {b for b in shelf.book_ids if lib.books[b].page_ids}
+        checks["books_in_shelf"].append({item["book_id"] for item in got["items"]} == expected)
+    books = [b for b in lib.books.values() if b.page_ids]
+    for book in rng.sample(books, k=min(20, len(books))):
+        got = _browse_all(h, scope, level="chapters", book=_fuzzy(book.name))
+        expected = {c for c in book.chapter_ids if lib.chapters[c].page_ids}
+        checks["chapters_in_book"].append({item["chapter_id"] for item in got["items"]} == expected)
+        got = _browse_all(h, scope, level="pages", book=book.name)
+        checks["pages_in_book"].append({item["page_id"] for item in got["items"]} == set(book.page_ids))
+    chapters = [c for c in lib.chapters.values() if c.page_ids]
+    for chapter in rng.sample(chapters, k=min(20, len(chapters))):
+        got = _browse_all(h, scope, level="pages", book=lib.books[chapter.book_id].name, chapter=chapter.name)
+        checks["pages_in_chapter"].append({item["page_id"] for item in got["items"]} == set(chapter.page_ids))
+    for key, values in checks.items():
+        out[key] = {"queries": len(values), "exact": round(sum(values) / max(1, len(values)), 3)}
+
+    # A restricted user must not learn hidden shelf names through listing or name resolution.
+    hidden_shelf = next(iter(sorted(expected_shelves)))
+    visible_pages = [p for p, page in lib.pages.items() if hidden_shelf not in page.shelf_names]
+    user = user_scope(visible_pages)
+    listed = {item["shelf_name"] for item in _browse_all(h, user, level="shelves")["items"]}
+    resolved = h.tools.execute("catalog_browse", {"level": "books", "shelf": hidden_shelf}, user)
+    # `unmatched` echoes the user's own words; only system-provided fields count as a leak.
+    exposed = {key: resolved.get(key) for key in ("items", "matched", "suggestions")}
+    leaked = hidden_shelf in listed or hidden_shelf in json.dumps(exposed, ensure_ascii=False)
+    out["hidden_shelf_leak"] = {"leaked": leaked, "filter_status": resolved.get("filter_status", "")}
     return out
 
 
@@ -714,20 +788,31 @@ def render_markdown(r: dict) -> str:
         f"- Raf: {cat['shelves']['expected']} / {cat['shelves']['got']}",
         f"- Kitap listesi: {cat['list_books_total']['expected']} / {cat['list_books_total']['got']} ({cat['list_books_total']['calls_needed']} çağrı)",
         f"- 3000 sayfalık kısıtlı kullanıcı: kitap {cat['restricted_3000']['books']['expected']} / {cat['restricted_3000']['books']['got']}, raf {cat['restricted_3000']['shelves']['expected']} / {cat['restricted_3000']['shelves']['got']}",
-        f"- Bölüm (chapter) sayısı dönüyor mu: {cat['chapter_count_available']}; kitap listesinde raf/bölüm alanı: {cat['list_books_has_shelf_or_chapter_fields']}",
+        f"- Bölüm: {cat['chapters']['expected']} / {cat['chapters']['got']}",
+        f"- Bölüm sayısı doğru dönüyor mu: {cat['chapter_count_available']}; kitap listesinde raf/bölüm alanı: {cat['list_books_has_shelf_or_chapter_fields']}",
         "",
         "| Test | Sorgu | Top-1 | Top-8 | Rastgele top-1 |",
         "|---|---|---|---|---|",
     ]
     hi = r["hierarchy"]
     for level in ("chapter", "book", "shelf"):
-        d = hi[f"disambiguate_by_{level}"]
-        lines.append(f"| Aynı bilgi, {level} adıyla ayırt et | {d['queries']} | {d['top1_accuracy']} | {d['in_top8']} | {d['random_baseline_top1']} |")
+        for suffix, label in (("", "ad soruda"), ("_filter", "ad filtre olarak da")):
+            d = hi[f"disambiguate_by_{level}{suffix}"]
+            lines.append(f"| Aynı bilgi, {level} ile ayırt et ({label}) | {d['queries']} | {d['top1_accuracy']} | {d['in_top8']} | {d['random_baseline_top1']} |")
     lines += ["", f"Sayfa başlığıyla arama recall@8: {hi['page_title_lookup']['recall_at_8']} ({hi['page_title_lookup']['queries']} sorgu).", ""]
     lines += ["| Listeleme sorusu (arama ile) | Sorgu | Dönen sayfaların doğru kapta olma oranı | Kapsama |", "|---|---|---|---|"]
     for level in ("shelf", "book", "chapter"):
         d = hi[f"list_{level}_via_search"]
         lines.append(f"| {level} | {d['queries']} | {d['precision_of_returned_pages']} | {d['member_coverage']} |")
+    br = hi["browse"]
+    lines += [
+        "",
+        "catalog_browse ile listeleme (tam doğru oranı):",
+        "",
+        f"- Raf listesi: {br['list_shelves']['got']} / {br['list_shelves']['expected']}, tam: {br['list_shelves']['exact']}",
+    ]
+    lines += [f"- {key}: {br[key]['exact']} ({br[key]['queries']} sorgu)" for key in ("books_in_shelf", "chapters_in_book", "pages_in_book", "pages_in_chapter")]
+    lines += [f"- Kısıtlı kullanıcıya gizli raf adı sızdı mı: {br['hidden_shelf_leak']['leaked']}"]
     lines += [
         "",
         f"Yanıt modeline giden pasaj alanları: `{', '.join(hi['passage_fields'])}`; hiyerarşi alanı var mı: {hi['passage_has_hierarchy']}.",
