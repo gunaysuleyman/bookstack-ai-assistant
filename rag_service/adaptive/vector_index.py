@@ -61,13 +61,8 @@ class VectorIndex:
     def query(self, text: str, n_results: int, where: Optional[dict] = None) -> List[dict]:
         if n_results <= 0:
             return []
-        try:
-            available = self.collection.count()
-        except Exception:
-            available = n_results
-        if available <= 0:
-            return []
-        n_results = min(n_results, available)
+        # No count() per query (it scans the collection): Chroma returns fewer
+        # rows when n_results exceeds the collection, and an error returns [].
         kwargs = {
             "n_results": n_results,
             "include": ["documents", "metadatas", "distances"],

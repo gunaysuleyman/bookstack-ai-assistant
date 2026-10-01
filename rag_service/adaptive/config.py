@@ -80,7 +80,7 @@ def load_settings() -> Settings:
         index_version=INDEX_VERSION,
         embedding_model_id=os.getenv("EMBEDDING_MODEL_ID", "gemini-embedding-001"),
         embed_max_tokens=int(os.getenv("EMBED_MAX_TOKENS", "180")),
-        child_tokens=int(os.getenv("CHILD_CHUNK_TOKENS", "160")),
+        child_tokens=int(os.getenv("CHILD_CHUNK_TOKENS", "140")),
         parent_expand_tokens=int(os.getenv("PARENT_EXPAND_TOKENS", "220")),
         context_token_budget=int(os.getenv("CONTEXT_TOKEN_BUDGET", "3000")),
         history_token_budget=int(os.getenv("HISTORY_TOKEN_BUDGET", "800")),

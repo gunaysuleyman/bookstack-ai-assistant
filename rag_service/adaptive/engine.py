@@ -3,6 +3,7 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
+from adaptive.catalog import real_name, real_shelves
 from adaptive.config import Settings
 from adaptive.contracts import AuthorizationScope, EvidenceAssessment, QueryPlan, RetrievalCandidate
 from adaptive.hybrid import HybridSearcher, dedupe_candidates
@@ -23,6 +24,7 @@ from adaptive.tools import (
     parse_evidence_judgment,
     resolve_route,
     route_record,
+    state_shelves,
 )
 from adaptive.vector_index import VectorIndex
 
@@ -50,7 +52,11 @@ SYSTEM_PROMPT = (
     "current_page_summary runs summarize_current_page and is only an overall summary of the open page. "
     "current_page_detail runs search_current_page for a specific fact or procedure on that page; a summary can omit details. "
     "The server locks that search to the open page. document runs document_search for other documentation questions. "
-    "catalog_count and catalog_list read the accessible catalog. calculate runs calculator. "
+    "catalog_count and catalog_list read the accessible catalog of shelves, books, chapters, and pages; "
+    "report their counts and names exactly, and say when a listing has more items (has_more). "
+    "If a named shelf, book, or chapter was not found, say so and offer the suggested names; do not guess. "
+    "Passages carry their shelf, book, and chapter; name that location when it helps the user find the source. "
+    "calculate runs calculator. "
     "greeting is small talk. clarify is for a genuinely ambiguous request. "
     "If the evidence does not answer the question, say which part was not in the retrieved passages. "
     "Do not claim the documentation has no such procedure unless the passages say that. "
@@ -340,9 +346,12 @@ class AdaptiveEngine:
                 and self._calls_left(2)
             ):
                 search_tool = searches[0]["name"]
+                # Keep the shelf/book/chapter the user named on the follow-up search.
+                first_args = next((decision.get("args") or {} for decision in decisions if decision.get("tool") == search_tool), {})
+                containers = {key: first_args[key] for key in ("shelf", "book", "chapter") if first_args.get(key)}
                 followup = self.tools.execute(
                     search_tool,
-                    {"query": followup_query, "limit": self.settings.max_tool_result_passages},
+                    {"query": followup_query, "limit": self.settings.max_tool_result_passages, **containers},
                     scope,
                     current_page=current_page,
                 )
@@ -657,6 +666,9 @@ class AdaptiveEngine:
                     text=str(row["body"] or ""),
                     title=str(state["title"] or ""),
                     url=str(state["url"] or ""),
+                    book_name=real_name(state["book_name"]),
+                    chapter_name=real_name(state["chapter_name"]),
+                    shelf_names=real_shelves(state_shelves(state)),
                     channel="follow_up",
                 )
             )

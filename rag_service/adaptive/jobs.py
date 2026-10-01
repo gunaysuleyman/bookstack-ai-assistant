@@ -104,3 +104,68 @@ def apply_reconcile(
             legacy.delete_page(page_id)
         indexer.delete(page_id, generation)
     return plan
+
+
+# Container jobs share the sync_jobs table with page jobs, whose key is the
+# page id. Negative keys in separate ranges keep a book, chapter, or shelf job
+# from superseding (or taking the generation of) a page job with the same id.
+_CONTAINER_KEY_BASE = {"book": 0, "chapter": 1_000_000_000, "shelf": 2_000_000_000}
+
+
+def container_job_key(kind: str, item_id: int) -> int:
+    return -(_CONTAINER_KEY_BASE[kind] + int(item_id))
+
+
+PageEnqueuer = Callable[[int], object]
+
+
+def apply_book_refresh(store: StateStore, book_id: int, fetch_book: Callable[[int], Optional[dict]], enqueue_page: PageEnqueuer) -> dict:
+    """Apply a book change. `fetch_book` returns {"book_name", "shelf_names"} or None when the book is gone.
+
+    A shelf-only change is relabelled in place. A renamed or deleted book
+    re-queues its pages: the book name is embedded, and a page load of a
+    deleted book returns 404, which tombstones the page.
+    """
+    pages = store.catalog_page_ids_for(book_id=book_id)
+    info = fetch_book(book_id)
+    if info is None:
+        for page_id in pages:
+            enqueue_page(page_id)
+        return {"action": "requeued", "reason": "book_missing", "pages": len(pages)}
+    if store.book_pages_to_reembed(book_id, info["book_name"]):
+        for page_id in pages:
+            enqueue_page(page_id)
+        return {"action": "requeued", "reason": "book_renamed", "pages": len(pages)}
+    updated = store.relabel_book(book_id, info["book_name"], info["shelf_names"])
+    return {"action": "relabelled", "pages": updated}
+
+
+def apply_chapter_refresh(
+    store: StateStore, chapter_id: int, fetch_chapter: Callable[[int], Optional[dict]], enqueue_page: PageEnqueuer
+) -> dict:
+    """Re-queue every page that is or was in the chapter. `fetch_chapter` returns {"page_ids": [...]} or None."""
+    local = set(store.catalog_page_ids_for(chapter_id=chapter_id))
+    info = fetch_chapter(chapter_id)
+    remote = set(int(page_id) for page_id in (info or {}).get("page_ids") or [])
+    targets = sorted(local | remote)
+    for page_id in targets:
+        enqueue_page(page_id)
+    return {"action": "requeued", "pages": len(targets), "chapter_missing": info is None}
+
+
+def apply_shelf_refresh(
+    store: StateStore,
+    shelf_id: int,
+    shelf_name: str,
+    fetch_shelf: Callable[[int], Optional[dict]],
+    enqueue_book: Callable[[int], object],
+) -> dict:
+    """Refresh books now on the shelf and books indexed under its name. `fetch_shelf` returns {"name", "book_ids"} or None."""
+    info = fetch_shelf(shelf_id)
+    books = set(int(book_id) for book_id in (info or {}).get("book_ids") or [])
+    for name in {shelf_name, (info or {}).get("name") or ""}:
+        if name:
+            books.update(store.catalog_book_ids_for_shelf(name))
+    for book_id in sorted(books):
+        enqueue_book(book_id)
+    return {"action": "books_queued", "books": len(books)}

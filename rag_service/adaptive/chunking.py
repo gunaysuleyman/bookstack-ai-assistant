@@ -2,11 +2,13 @@ import re
 from dataclasses import dataclass
 from typing import List
 
+from adaptive.catalog import breadcrumb
 from adaptive.contracts import PageDocument
 from adaptive.tokenizer import estimate_tokens, truncate_to_tokens
 
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+_SENTENCE_END = re.compile(r"(?<=[.!?…;:])\s+")
 
 
 @dataclass
@@ -39,6 +41,7 @@ class ChildChunk:
 
 def chunk_document(page: PageDocument, child_tokens: int = 160, embed_max_tokens: int = 180) -> tuple:
     sections = _sections(page.markdown)
+    context = breadcrumb(page.book_name, page.chapter_name, page.name)
     parents: List[ParentSection] = []
     children: List[ChildChunk] = []
     for index, (heading, body) in enumerate(sections):
@@ -47,7 +50,7 @@ def chunk_document(page: PageDocument, child_tokens: int = 160, embed_max_tokens
         parents.append(ParentSection(parent_id, page.page_id, heading, parent_text, index))
         pieces = _pieces(body, child_tokens)
         for offset, piece in enumerate(pieces):
-            embed = _embed_text(heading, piece, embed_max_tokens)
+            embed = _embed_text(heading, piece, embed_max_tokens, context)
             children.append(
                 ChildChunk(
                     chunk_id=f"p{page.page_id}s{index}c{offset}",
@@ -93,7 +96,10 @@ def _pieces(body: str, child_tokens: int) -> List[str]:
             if buffer.strip():
                 pieces.append(buffer.strip())
                 buffer = ""
-            pieces.extend(_split_oversized(block, child_tokens))
+            split = _split_oversized(block, child_tokens)
+            # The last piece may be short; let the next block join it.
+            pieces.extend(split[:-1])
+            buffer = split[-1] if split else ""
             continue
         trial = f"{buffer}\n\n{block}".strip() if buffer else block
         if estimate_tokens(trial) <= child_tokens:
@@ -158,19 +164,7 @@ def _blocks(body: str) -> List[str]:
 def _split_oversized(block: str, child_tokens: int) -> List[str]:
     if block.startswith("|") or "\n|" in block:
         return _split_table(block, child_tokens)
-    words = block.split()
-    pieces = []
-    current: List[str] = []
-    for word in words:
-        trial = " ".join(current + [word])
-        if current and estimate_tokens(trial) > child_tokens:
-            pieces.append(" ".join(current))
-            current = [word]
-        else:
-            current.append(word)
-    if current:
-        pieces.append(" ".join(current))
-    return pieces
+    return _split_oversized_plain(block, child_tokens)
 
 
 def _split_table(block: str, child_tokens: int) -> List[str]:
@@ -193,7 +187,33 @@ def _split_table(block: str, child_tokens: int) -> List[str]:
 
 
 def _split_oversized_plain(block: str, child_tokens: int) -> List[str]:
-    words = block.split()
+    """Pack whole sentences; only a sentence longer than the limit is cut between words."""
+    pieces: List[str] = []
+    current = ""
+    for sentence in _SENTENCE_END.split(block.strip()):
+        sentence = " ".join(sentence.split())
+        if not sentence:
+            continue
+        if estimate_tokens(sentence) > child_tokens:
+            if current:
+                pieces.append(current)
+            words = _split_words(sentence, child_tokens)
+            pieces.extend(words[:-1])
+            current = words[-1] if words else ""
+            continue
+        trial = f"{current} {sentence}" if current else sentence
+        if estimate_tokens(trial) <= child_tokens:
+            current = trial
+        else:
+            pieces.append(current)
+            current = sentence
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def _split_words(text: str, child_tokens: int) -> List[str]:
+    words = text.split()
     pieces = []
     current: List[str] = []
     for word in words:
@@ -208,11 +228,15 @@ def _split_oversized_plain(block: str, child_tokens: int) -> List[str]:
     return pieces
 
 
-def _embed_text(heading: str, piece: str, embed_max_tokens: int) -> str:
+def _embed_text(heading: str, piece: str, embed_max_tokens: int, context: str = "") -> str:
+    """Location breadcrumb, then heading, then as much of the piece as fits the embedding budget."""
+    context_budget = min(30, max(0, embed_max_tokens // 6))
+    short_context = truncate_to_tokens(context, context_budget) if context else ""
     heading_budget = min(24, max(0, embed_max_tokens // 5))
     short_heading = truncate_to_tokens(heading, heading_budget) if heading else ""
-    if short_heading and estimate_tokens(short_heading) < embed_max_tokens / 2:
-        body_budget = max(1, embed_max_tokens - estimate_tokens(short_heading) - 1)
+    prefix = "\n".join(part for part in (short_context, short_heading) if part)
+    if prefix and estimate_tokens(prefix) < embed_max_tokens / 2:
+        body_budget = max(1, embed_max_tokens - estimate_tokens(prefix) - 1)
         body = truncate_to_tokens(piece, body_budget)
-        return f"{short_heading}\n{body}".strip()
+        return f"{prefix}\n{body}".strip()
     return truncate_to_tokens(piece, embed_max_tokens)

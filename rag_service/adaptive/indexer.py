@@ -59,12 +59,17 @@ class Indexer:
         )
         if unchanged:
             return "unchanged"
+        # Title, book, and chapter are part of the embedded text; a change to
+        # any of them needs new vectors. Shelves, tags, and URL do not.
         metadata_only = (
             state
             and state["status"] == "published"
             and state["content_hash"] == body_hash
             and state["chunk_schema_version"] == self.settings.chunk_schema_version
             and state["embedding_model_id"] == self.settings.embedding_model_id
+            and str(state["title"] or "") == page.name
+            and str(state["book_name"] or "") == page.book_name
+            and str(state["chapter_name"] or "") == page.chapter_name
         )
         if metadata_only:
             self.store.update_metadata_only(page, meta_hash, generation)
@@ -99,7 +104,10 @@ class Indexer:
                     "parent_id": child.parent_id,
                     "name": page.name,
                     "url": page.url,
+                    "book_id": int(page.book_id),
                     "book_name": page.book_name,
+                    "chapter_id": int(page.chapter_id),
+                    "chapter_name": page.chapter_name,
                     "shelf_name": page.shelf_label(),
                     "heading": child.heading,
                     "index_version": self.settings.index_version,
@@ -115,7 +123,7 @@ class Indexer:
         try:
             if self.fail_fts:
                 raise RuntimeError("lexical write failed")
-            self.store.write_fts(revision_id)
+            self.store.write_fts(revision_id, page)
         except Exception:
             ids = self.store.discard_revision(revision_id)
             self.vectors.delete(ids)
