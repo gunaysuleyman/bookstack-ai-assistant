@@ -1,0 +1,7 @@
+{
+  "name": "usage-band",
+  "version": "0.1.0",
+  "description": "Mesaj kutusunun üstünde kullanım şeridi: 5h/7d limitleri, token toplamları ve oturum maliyeti",
+  "author": { "name": "suleymangunay", "email": "suleymangunay.isk@gmail.com" },
+  "types": "./types/index.d.ts"
+}
