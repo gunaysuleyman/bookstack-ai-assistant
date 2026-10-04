@@ -7,8 +7,27 @@ Claude Code mod'u: mesaj kutusunun üstünde kullanım şeridi.
 - `/kullanim gizle` / `/kullanim goster`: şeridi kapat / aç
 
 Token toplamları `scripts/tokens.mjs` ile oturum dökümünden sayılır
-(`node` PATH'te, `/usr/local/bin` ya da `/opt/homebrew/bin` altında olmalı);
+(`node` PATH'te, `/usr/local/bin`, `/opt/homebrew/bin` ya da `C:\Program Files\nodejs` altında olmalı);
 çalışmazsa tur sonlarındaki değerler `~` ile gösterilir.
+
+## Kalıcı kurulum (Windows)
+
+[Node.js](https://nodejs.org) kurulu olmalı. PowerShell'de, deponun kökünden:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\mods" | Out-Null
+Copy-Item -Recurse -Force mods\usage-band "$env:USERPROFILE\.claude\mods\"
+```
+
+`%USERPROFILE%\.claude\settings.json` içindeki `env` bloğuna (`<kullanıcı>` yerine kendi adınız):
+
+```json
+"CLAUDE_CODE_PLUGIN_DIRS": "C:\\Users\\<kullanıcı>\\.claude\\mods\\usage-band",
+"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+```
+
+(`CLAUDE_CODE_PLUGIN_DIRS` zaten varsa yolu `;` ile sona ekleyin.) Sonra uygulamayı yeniden başlatın ve
+`claude -p "/kullanim"` ile doğrulayın.
 
 ## Kalıcı kurulum (macOS/Linux)
 

@@ -24,7 +24,12 @@ const transcript = atom({ plugin: 'usage-band', key: 'transcript' } as const, nu
 const isHidden = atom({ plugin: 'usage-band', key: 'isHidden' } as const, false)
 const now = atom({ plugin: 'usage-band', key: 'now' } as const, 0)
 
-const NODES = ['node', '/usr/local/bin/node', '/opt/homebrew/bin/node']
+const NODES = [
+  'node',
+  '/usr/local/bin/node',
+  '/opt/homebrew/bin/node',
+  'C:\\Program Files\\nodejs\\node.exe',
+]
 const TICK_MS = 30_000
 
 type TokensReply = UsageFile & {
